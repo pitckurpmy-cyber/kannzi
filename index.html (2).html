@@ -1,0 +1,3226 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>漢字将棋バトルロワイヤル</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;900&family=Noto+Serif+JP:wght@600;700;900&display=swap" rel="stylesheet">
+    <style>
+        /* 基本テーマ・和モダン×ネオンタイポグラフィ */
+        body {
+            font-family: 'Inter', 'Noto Serif JP', sans-serif;
+            background-color: #090e1a;
+            background-image:
+                radial-gradient(circle at 15% 15%, rgba(245, 158, 11, 0.11) 0%, transparent 45%),
+                radial-gradient(circle at 85% 85%, rgba(56, 189, 248, 0.11) 0%, transparent 45%);
+            color: #f8fafc;
+            overflow-x: hidden;
+            user-select: none;
+        }
+
+        .font-shogi {
+            font-family: 'Noto Serif JP', serif;
+        }
+
+        /* 将棋駒（五角形） */
+        .shogi-piece {
+            position: relative;
+            width: 84%;
+            height: 88%;
+            background: linear-gradient(145deg, #fbe4b4 0%, #dfa952 100%);
+            clip-path: polygon(50% 2%, 92% 20%, 100% 98%, 0% 98%, 8% 20%);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.65);
+            transition: transform 0.16s cubic-bezier(0.34, 1.56, 0.64, 1), filter 0.16s;
+            cursor: pointer;
+            z-index: 10;
+        }
+
+        .shogi-piece::after {
+            content: '';
+            position: absolute;
+            inset: 2px;
+            clip-path: polygon(50% 3%, 90% 21%, 98% 96%, 2% 96%, 10% 21%);
+            border: 1px solid rgba(120, 53, 15, 0.45);
+            pointer-events: none;
+        }
+
+        .shogi-piece:hover {
+            transform: scale(1.07) translateY(-1px);
+        }
+
+        .piece-self {
+            background: linear-gradient(145deg, #fef08a 0%, #f59e0b 100%);
+            filter: drop-shadow(0 0 10px rgba(251, 191, 36, 0.95));
+        }
+
+        .piece-human {
+            background: linear-gradient(145deg, #fed7aa 0%, #ea580c 100%);
+        }
+
+        .piece-ai {
+            background: linear-gradient(145deg, #f3d59b 0%, #c69247 100%);
+        }
+
+        .piece-frozen {
+            filter: hue-rotate(175deg) brightness(1.22) drop-shadow(0 0 8px #38bdf8);
+        }
+
+        .piece-copied {
+            box-shadow: inset 0 0 10px rgba(168, 85, 247, 0.9);
+        }
+
+        .piece-selected {
+            transform: scale(1.1) translateY(-2px);
+            filter: drop-shadow(0 0 12px rgba(56, 189, 248, 0.95));
+        }
+
+        /* カウンター回転シールドオーラ */
+        @keyframes counterSpin {
+            0% { transform: rotate(0deg) scale(1); }
+            50% { transform: rotate(180deg) scale(1.06); }
+            100% { transform: rotate(360deg) scale(1); }
+        }
+
+        .counter-shield-ring {
+            position: absolute;
+            inset: 3%;
+            border-radius: 50%;
+            border: 2.5px dashed #f43f5e;
+            box-shadow: 0 0 12px rgba(244, 63, 94, 0.85), inset 0 0 8px rgba(251, 191, 36, 0.7);
+            animation: counterSpin 3.2s linear infinite;
+            pointer-events: none;
+            z-index: 15;
+        }
+
+        /* 画面＆駒のシェイク演出 */
+        @keyframes shakeDamage {
+            0%, 100% { transform: translate(0, 0) rotate(0deg); }
+            20% { transform: translate(-6px, 2px) rotate(-7deg); filter: brightness(2.3) sepia(1) hue-rotate(-50deg) saturate(5); }
+            40% { transform: translate(6px, -2px) rotate(7deg); }
+            60% { transform: translate(-4px, -2px) rotate(-4deg); }
+            80% { transform: translate(4px, 2px) rotate(4deg); }
+        }
+
+        .animate-damage {
+            animation: shakeDamage 0.5s ease-in-out;
+        }
+
+        @keyframes boardShake {
+            0%, 100% { transform: translate(0, 0); }
+            15% { transform: translate(-6px, 4px); }
+            30% { transform: translate(6px, -4px); }
+            45% { transform: translate(-5px, -3px); }
+            60% { transform: translate(5px, 3px); }
+            75% { transform: translate(-3px, 2px); }
+        }
+
+        .board-shake {
+            animation: boardShake 0.42s cubic-bezier(0.36, 0.07, 0.19, 0.97);
+        }
+
+        /* 将棋盤 */
+        .shogi-board {
+            background: linear-gradient(135deg, #e0aa58 0%, #c48838 100%);
+            border: 6px solid #451a03;
+            box-shadow: 0 22px 55px rgba(0, 0, 0, 0.85), inset 0 0 28px rgba(69, 26, 3, 0.48);
+            position: relative;
+        }
+
+        .board-cell {
+            border: 1px solid rgba(69, 26, 3, 0.55);
+            position: relative;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: background-color 0.14s;
+        }
+
+        /* 移動ハイライト */
+        .cell-move {
+            background-color: rgba(56, 189, 248, 0.46) !important;
+            cursor: pointer;
+        }
+        .cell-move::before {
+            content: '';
+            width: 26%;
+            height: 26%;
+            border-radius: 50%;
+            background-color: rgba(14, 165, 233, 0.95);
+            box-shadow: 0 0 8px #0284c7;
+            pointer-events: none;
+        }
+
+        /* 通常攻撃ハイライト */
+        .cell-attack {
+            background-color: rgba(244, 63, 94, 0.54) !important;
+            cursor: pointer;
+        }
+        .cell-attack::after {
+            content: '⚔';
+            position: absolute;
+            top: 2px;
+            right: 3px;
+            font-size: 0.72rem;
+            color: #fff;
+            text-shadow: 0 0 4px #e11d48;
+            pointer-events: none;
+            z-index: 20;
+        }
+
+        /* スキル対象ハイライト（紫系） */
+        .cell-skill {
+            background-color: rgba(168, 85, 247, 0.52) !important;
+            box-shadow: inset 0 0 10px rgba(192, 132, 252, 0.9);
+            cursor: pointer;
+        }
+        .cell-skill::after {
+            content: '⚡';
+            position: absolute;
+            top: 2px;
+            right: 3px;
+            font-size: 0.75rem;
+            color: #fef08a;
+            text-shadow: 0 0 6px #9333ea;
+            pointer-events: none;
+            z-index: 20;
+        }
+
+        /* 範囲・貫通の波及対象マス（オレンジ系） */
+        .cell-splash {
+            background-color: rgba(251, 146, 60, 0.5) !important;
+            box-shadow: inset 0 0 10px rgba(234, 88, 12, 0.88);
+        }
+
+        /* 予約済みハイライト */
+        .cell-plotted {
+            outline: 3px solid #10b981;
+            outline-offset: -3px;
+            background-color: rgba(16, 185, 129, 0.36) !important;
+        }
+        .cell-plotted::before {
+            content: '予約';
+            position: absolute;
+            bottom: 2px;
+            left: 2px;
+            font-size: 9px;
+            font-weight: 900;
+            background: #059669;
+            color: #fff;
+            padding: 0 4px;
+            border-radius: 3px;
+            z-index: 25;
+            pointer-events: none;
+        }
+
+        ::-webkit-scrollbar {
+            width: 5px;
+            height: 5px;
+        }
+        ::-webkit-scrollbar-track {
+            background: rgba(15, 23, 42, 0.6);
+        }
+        ::-webkit-scrollbar-thumb {
+            background: rgba(100, 116, 139, 0.55);
+            border-radius: 3px;
+        }
+    </style>
+</head>
+<body class="min-h-screen flex flex-col">
+
+    <!-- ヘッダー -->
+    <header class="bg-slate-900/95 border-b border-amber-500/30 px-4 py-2.5 flex flex-wrap items-center justify-between gap-2 sticky top-0 z-40 backdrop-blur-md">
+        <div class="flex items-center gap-3">
+            <div class="w-9 h-9 bg-gradient-to-b from-amber-300 to-amber-500 text-slate-950 font-shogi font-black text-xl flex items-center justify-center shadow-md" style="clip-path: polygon(50% 5%, 92% 22%, 100% 98%, 0% 98%, 8% 22%);">
+                王
+            </div>
+            <div>
+                <div class="flex items-center gap-2 flex-wrap">
+                    <h1 class="text-base sm:text-xl font-shogi font-bold tracking-wider bg-gradient-to-r from-amber-200 via-amber-400 to-orange-400 bg-clip-text text-transparent">
+                        漢字将棋バトルロワイヤル
+                    </h1>
+                    <span id="connection-badge" class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/40">
+                        ⚡ 即時プレイ・多窓同期対応
+                    </span>
+                </div>
+                <p class="text-[11px] text-slate-400 hidden sm:block">最大30人（4×4〜10×10盤）・全攻撃1ダメージ固定・能力コピー＆カウンター搭載</p>
+            </div>
+        </div>
+
+        <div class="flex items-center gap-2">
+            <button id="btn-encyclopedia" type="button" class="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-600 text-xs font-semibold text-amber-300 transition flex items-center gap-1">
+                <span>📖</span> 漢字図鑑
+            </button>
+            <button id="btn-leave-room" type="button" class="hidden px-3 py-1.5 rounded-lg bg-rose-950/80 hover:bg-rose-900 border border-rose-700/60 text-xs font-semibold text-rose-200 transition">
+                退室・タイトルへ
+            </button>
+        </div>
+    </header>
+
+    <!-- メインコンテンツ -->
+    <main class="flex-1 flex flex-col items-center justify-center p-3 sm:p-5 w-full max-w-7xl mx-auto">
+
+        <!-- ==================== 1. タイトル＆ロビー画面 ==================== -->
+        <section id="lobby-entry-screen" class="w-full max-w-4xl bg-slate-900/90 border border-amber-500/30 rounded-2xl p-5 sm:p-8 shadow-2xl backdrop-blur-md">
+            <div class="text-center mb-6">
+                <span class="inline-block px-3 py-1 rounded-full bg-amber-500/15 border border-amber-500/30 text-amber-300 text-xs font-bold mb-2">
+                    1〜30人対応・1ダメージ固定・能力コピー＆カウンター実装
+                </span>
+                <h2 class="text-2xl sm:text-3xl font-shogi font-black text-white mb-1">漢字将棋バトルロワイヤル</h2>
+                <p class="text-xs sm:text-sm text-slate-400">
+                    好きな漢字1文字を入力して出陣！すぐに1人テストプレイを始めるか、6桁IDでルームを作成・参加できます。
+                </p>
+            </div>
+
+            <!-- 漢字＆プレイヤー設定エリア -->
+            <div class="grid grid-cols-1 md:grid-cols-12 gap-5 bg-slate-950/80 p-5 rounded-xl border border-slate-800 mb-6">
+                <!-- 左：名前＆漢字入力 -->
+                <div class="md:col-span-5 flex flex-col items-center justify-between border-b md:border-b-0 md:border-r border-slate-800 pb-4 md:pb-0 md:pr-4">
+                    <div class="w-full mb-3">
+                        <label for="player-name-input" class="block text-xs text-slate-400 font-semibold mb-1">プレイヤー名</label>
+                        <div class="flex gap-1.5">
+                            <input id="player-name-input" type="text" maxlength="10"
+                                class="flex-1 bg-slate-900 border border-slate-700 rounded-lg px-3 py-1.5 text-sm text-white focus:outline-none focus:border-amber-400"
+                                placeholder="名前を入力">
+                            <button id="btn-random-name" type="button" class="px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs text-slate-300" title="ランダム名">
+                                🎲
+                            </button>
+                        </div>
+                    </div>
+
+                    <div class="flex flex-col items-center">
+                        <label for="kanji-input" class="text-xs text-slate-400 font-semibold mb-1.5">あなたの漢字（1文字）</label>
+                        <div class="relative w-24 h-28 flex items-center justify-center">
+                            <div class="absolute inset-0 bg-gradient-to-b from-amber-300 to-amber-600 shadow-lg" style="clip-path: polygon(50% 2%, 92% 20%, 100% 98%, 0% 98%, 8% 20%);"></div>
+                            <input id="kanji-input" type="text" maxlength="2" value="火"
+                                class="relative z-10 w-20 h-20 bg-transparent text-center font-shogi font-black text-5xl text-slate-950 focus:outline-none caret-rose-600"
+                                placeholder="漢">
+                        </div>
+                        <button id="btn-random-kanji" type="button" class="mt-1.5 text-xs text-amber-400 hover:text-amber-300 underline">
+                            🎲 ランダム漢字
+                        </button>
+                    </div>
+                </div>
+
+                <!-- 右：能力＆固有スキル鑑定 -->
+                <div class="md:col-span-7 flex flex-col justify-between">
+                    <div class="bg-slate-900/95 rounded-xl p-4 border border-amber-500/25 mb-3">
+                        <div class="flex items-center justify-between border-b border-slate-800 pb-2 mb-2">
+                            <span class="text-xs text-slate-400">ステータス＆スキル鑑定</span>
+                            <span id="preview-badge" class="px-2 py-0.5 rounded text-[11px] font-bold bg-amber-500/20 text-amber-300">★ 固有能力</span>
+                        </div>
+                        <div class="flex items-baseline justify-between mb-1.5">
+                            <h3 id="preview-title" class="text-lg font-shogi font-bold text-amber-300">火（業火放射型）</h3>
+                            <span id="preview-hp" class="text-sm font-bold text-rose-400">♥ ♥ ♥ (3)</span>
+                        </div>
+                        <p id="preview-desc" class="text-xs text-slate-300 leading-relaxed mb-2">
+                            説明文
+                        </p>
+                        <div class="space-y-1 text-[11px] bg-slate-950/80 p-2.5 rounded-lg border border-slate-800/90">
+                            <div>移動特性: <span id="preview-move-tag" class="text-sky-300 font-semibold">全方向1マス移動</span></div>
+                            <div>固有スキル: <span id="preview-skill-tag" class="text-purple-300 font-semibold">⚡ 火球放射（上下左右2マス先へ火球 / CT 1T）</span></div>
+                        </div>
+                    </div>
+
+                    <div>
+                        <p class="text-[11px] text-slate-400 mb-1.5 font-semibold">代表漢字クイック選択（コピー「写」・カウンター「反」も選択可）:</p>
+                        <div id="preset-kanji-list" class="flex flex-wrap gap-1 max-h-24 overflow-y-auto pr-1">
+                            <!-- JS生成 -->
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- クイックスタート（1人AI対戦） -->
+            <div class="bg-gradient-to-r from-amber-500/15 via-orange-500/15 to-rose-500/15 border border-amber-400/50 rounded-xl p-4 mb-5 flex flex-col sm:flex-row items-center justify-between gap-4">
+                <div>
+                    <div class="flex items-center gap-2">
+                        <span class="px-2 py-0.5 rounded bg-amber-400 text-slate-950 text-[10px] font-black">おすすめ・即プレイ</span>
+                        <h3 class="font-bold text-base text-white">すぐに1人でテストプレイ（AIと対戦）</h3>
+                    </div>
+                    <p class="text-xs text-slate-300 mt-1">
+                        対戦人数（4〜30人）を選んでワンクリックですぐに対局開始！20人以上は10×10マスで開戦します。
+                    </p>
+                </div>
+                <div class="flex items-center gap-2 shrink-0 w-full sm:w-auto justify-end">
+                    <select id="quick-ai-count" class="bg-slate-950 border border-amber-500/40 rounded-xl px-3 py-2.5 text-xs font-bold text-amber-200 focus:outline-none">
+                        <option value="4">4人対戦 (4×4)</option>
+                        <option value="8" selected>8人対戦 (5×5)</option>
+                        <option value="16">16人対戦 (6×6)</option>
+                        <option value="22">22人対戦 (10×10)</option>
+                        <option value="30">30人最大戦 (10×10)</option>
+                    </select>
+                    <button id="btn-quick-solo" type="button" class="px-5 py-2.5 rounded-xl bg-gradient-to-r from-amber-400 via-amber-500 to-orange-500 hover:from-amber-300 hover:to-orange-400 text-slate-950 font-shogi font-black text-sm shadow-lg shadow-amber-500/25 transition whitespace-nowrap">
+                        ▶ すぐ遊ぶ
+                    </button>
+                </div>
+            </div>
+
+            <!-- ルーム作成 / ルーム参加 -->
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div class="bg-slate-950/75 border border-amber-500/30 rounded-xl p-4 flex flex-col justify-between">
+                    <div>
+                        <h3 class="font-bold text-base text-amber-300 mb-1">🏯 新しく部屋を作る（最大30人）</h3>
+                        <p class="text-xs text-slate-400 mb-4">
+                            6桁のルームIDを発行して待機室へ進みます。AI枠の追加や別タブとの同期対戦が可能です。
+                        </p>
+                    </div>
+                    <button id="btn-create-room" type="button" class="w-full py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 border border-amber-500/50 text-amber-300 font-bold text-sm transition">
+                        ルームを作成する（ID発行）
+                    </button>
+                </div>
+
+                <div class="bg-slate-950/75 border border-sky-500/30 rounded-xl p-4 flex flex-col justify-between">
+                    <div>
+                        <h3 class="font-bold text-base text-sky-300 mb-1">🚪 ルームIDで参加する</h3>
+                        <p class="text-xs text-slate-400 mb-2">
+                            発行された6桁のルームIDを入力して待機室に入室します。
+                        </p>
+                        <input id="join-room-id-input" type="text" maxlength="6" placeholder="例: 482910"
+                            class="w-full mb-3 bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-center font-mono text-lg tracking-widest text-white uppercase focus:outline-none focus:border-sky-400">
+                    </div>
+                    <button id="btn-join-room" type="button" class="w-full py-2.5 rounded-xl bg-gradient-to-r from-sky-500 to-indigo-600 hover:from-sky-400 hover:to-indigo-500 text-white font-bold text-sm shadow-lg shadow-sky-500/20 transition">
+                        部屋に参加する
+                    </button>
+                </div>
+            </div>
+
+            <!-- 通知・エラーメッセージ -->
+            <div id="lobby-toast" class="hidden mt-4 p-3 rounded-xl bg-rose-950/85 border border-rose-500/50 text-rose-200 text-xs text-center font-semibold"></div>
+        </section>
+
+        <!-- ==================== 2. 待機室（ロビー内）画面 ==================== -->
+        <section id="waiting-room-screen" class="hidden w-full max-w-4xl bg-slate-900/90 border border-amber-500/30 rounded-2xl p-5 sm:p-7 shadow-2xl backdrop-blur-md">
+            <div class="flex flex-wrap items-center justify-between gap-4 border-b border-slate-800 pb-4 mb-5">
+                <div>
+                    <div class="flex items-center gap-2 flex-wrap">
+                        <span class="px-2.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300 text-xs font-bold">待機室（最大30人）</span>
+                        <span id="waiting-mode-tag" class="px-2 py-0.5 rounded bg-slate-800 text-slate-300 text-xs">多窓・ローカル同期</span>
+                    </div>
+                    <div class="flex items-center gap-3 mt-2">
+                        <span class="text-xs text-slate-400">ルームID:</span>
+                        <span id="display-room-id" class="font-mono text-2xl sm:text-3xl font-black tracking-widest text-amber-300 bg-slate-950 px-3 py-1 rounded-lg border border-amber-500/40">
+                            ------
+                        </span>
+                        <button id="btn-copy-room-id" type="button" class="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-600 text-xs font-bold text-slate-200 transition">
+                            📋 コピー
+                        </button>
+                    </div>
+                </div>
+
+                <div class="bg-slate-950/80 border border-slate-800 rounded-xl px-4 py-3 text-right">
+                    <div class="text-xs text-slate-400">参加人数 / 適用盤面</div>
+                    <div class="flex items-baseline justify-end gap-2 mt-0.5">
+                        <span id="waiting-player-count" class="text-2xl font-black text-white">1<span class="text-xs font-normal text-slate-400"> / 30人</span></span>
+                        <span id="waiting-board-size" class="px-2.5 py-0.5 rounded bg-sky-500/20 border border-sky-500/40 text-sky-300 text-xs font-bold">
+                            4 × 4 マス
+                        </span>
+                    </div>
+                    <div class="text-[10px] text-slate-500 mt-1">
+                        5人未満:4×4 / 5〜9人:5×5 / 10〜19人:6×6 / 20〜30人:10×10
+                    </div>
+                </div>
+            </div>
+
+            <!-- 待機中の漢字変更バー -->
+            <div class="bg-slate-950/75 border border-slate-800 rounded-xl p-3 mb-5 flex flex-wrap items-center justify-between gap-3">
+                <div class="flex items-center gap-3">
+                    <span class="text-xs text-slate-400 font-semibold">あなたの出陣漢字:</span>
+                    <input id="waiting-kanji-input" type="text" maxlength="2" value="火"
+                        class="w-11 h-11 rounded-lg bg-amber-400 text-slate-950 font-shogi font-black text-2xl text-center focus:outline-none">
+                    <button id="btn-update-my-kanji" type="button" class="px-3 py-1.5 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/50 text-amber-300 text-xs font-bold transition">
+                        漢字を反映
+                    </button>
+                </div>
+                <button id="btn-toggle-ready" type="button" class="px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold shadow transition">
+                    ✅ 準備完了
+                </button>
+            </div>
+
+            <!-- 参加者グリッド -->
+            <div class="mb-5">
+                <div class="flex items-center justify-between mb-2">
+                    <h3 class="text-xs font-bold text-slate-300">参戦プレイヤー一覧</h3>
+                    <span class="text-[11px] text-slate-500">※ホストはAIを追加して人数を調整できます</span>
+                </div>
+                <div id="waiting-players-grid" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-2 max-h-72 overflow-y-auto pr-1"></div>
+            </div>
+
+            <!-- ホスト操作 -->
+            <div id="host-controls" class="hidden bg-slate-950/90 border border-amber-500/40 rounded-xl p-4 flex flex-wrap items-center justify-between gap-3">
+                <div class="flex flex-wrap items-center gap-2">
+                    <span class="px-2 py-0.5 rounded bg-amber-500/20 text-amber-300 text-xs font-bold">👑 ホスト</span>
+                    <button id="btn-add-ai-1" type="button" class="px-3 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-600 text-xs font-bold text-slate-200 transition">
+                        + AI 1体
+                    </button>
+                    <button id="btn-add-ai-5" type="button" class="px-3 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-600 text-xs font-bold text-slate-200 transition">
+                        + AI 5体
+                    </button>
+                    <button id="btn-clear-ai" type="button" class="px-3 py-2 rounded-lg bg-slate-900 hover:bg-rose-950/60 border border-slate-700 text-xs text-rose-300 transition">
+                        AI全削除
+                    </button>
+                </div>
+
+                <button id="btn-host-start-game" type="button" class="px-6 py-3 rounded-xl bg-gradient-to-r from-amber-500 via-orange-500 to-rose-600 hover:from-amber-400 hover:to-rose-500 text-slate-950 font-shogi font-black text-base shadow-lg shadow-orange-500/30 transition">
+                    ⚔️ 対局開始！
+                </button>
+            </div>
+
+            <div id="guest-waiting-msg" class="hidden bg-slate-950/70 border border-slate-800 rounded-xl p-4 text-center text-xs text-slate-300">
+                ⏳ ホストが対局を開始するのを待っています...
+            </div>
+        </section>
+
+        <!-- ==================== 3. バトル画面 ==================== -->
+        <section id="battle-screen" class="hidden w-full grid grid-cols-1 lg:grid-cols-12 gap-4 items-start">
+
+            <!-- 左カラム：ターン進行・自分ステータス・観戦情報 -->
+            <div class="lg:col-span-3 flex flex-col gap-3 order-2 lg:order-1">
+                <!-- ターン・タイマー・即実行カード -->
+                <div class="bg-slate-900/90 border border-slate-800 rounded-xl p-4 shadow-lg">
+                    <div class="flex items-center justify-between mb-2">
+                        <span id="battle-turn-badge" class="px-2.5 py-0.5 rounded bg-amber-500/20 text-amber-300 text-xs font-bold">第 1 ターン</span>
+                        <span id="battle-room-tag" class="text-[11px] font-mono text-slate-400">ID: ------</span>
+                    </div>
+
+                    <div class="mb-3">
+                        <div class="flex items-baseline justify-between mb-1">
+                            <span class="text-xs text-slate-400">ターン制限時間</span>
+                            <span id="turn-timer-text" class="text-xl font-black text-amber-400">15<span class="text-xs font-normal ml-0.5">秒</span></span>
+                        </div>
+                        <div class="w-full h-2 bg-slate-800 rounded-full overflow-hidden">
+                            <div id="turn-timer-bar" class="h-full bg-gradient-to-r from-emerald-400 via-amber-400 to-rose-500 transition-all duration-300" style="width: 100%;"></div>
+                        </div>
+                        <div class="flex justify-between text-[10px] text-slate-400 mt-1">
+                            <span id="plotted-progress-text">予約: 0 / 0 人</span>
+                            <span id="battle-board-dim" class="text-sky-300 font-bold">5 × 5</span>
+                        </div>
+                    </div>
+
+                    <!-- 即時ターン進行 / 行動確定ボタン -->
+                    <button id="btn-execute-turn-now" type="button" class="w-full py-2.5 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-400 hover:to-teal-500 text-slate-950 font-black text-xs sm:text-sm shadow-lg shadow-emerald-500/20 transition flex items-center justify-center gap-1.5">
+                        <span>⚡</span> <span id="btn-execute-turn-label">行動確定 / ターン進行</span>
+                    </button>
+
+                    <div class="flex items-baseline justify-between border-t border-slate-800 mt-3 pt-2.5">
+                        <div>
+                            <span class="text-[11px] text-slate-400">残り生存</span>
+                            <div class="text-xl font-black text-white">
+                                <span id="battle-alive-count" class="text-amber-400">6</span>
+                                <span class="text-xs text-slate-500">/ <span id="battle-total-count">6</span></span>
+                            </div>
+                        </div>
+                        <div class="text-right">
+                            <span class="text-[11px] text-slate-400">攻撃ダメージ</span>
+                            <div class="text-sm font-black text-rose-400">常に 1 固定</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 自分の駒カード -->
+                <div id="my-battle-card" class="bg-slate-900/90 border border-amber-500/40 rounded-xl p-4 shadow-lg">
+                    <div class="flex items-center gap-3 mb-2">
+                        <div id="my-battle-piece" class="w-12 h-14 shrink-0 bg-gradient-to-b from-amber-300 to-amber-500 text-slate-950 font-shogi font-black text-2xl flex items-center justify-center shadow" style="clip-path: polygon(50% 4%, 92% 20%, 100% 98%, 0% 98%, 8% 20%);">
+                            火
+                        </div>
+                        <div class="flex-1 min-w-0">
+                            <div class="flex items-center gap-1.5 flex-wrap">
+                                <span class="px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300 text-[10px] font-bold">あなた</span>
+                                <span id="my-battle-status" class="text-xs font-bold text-emerald-400 truncate">行動選択中</span>
+                            </div>
+                            <h3 id="my-battle-title" class="font-shogi font-bold text-sm text-white truncate mt-0.5">火（業火放射型）</h3>
+                            <div id="my-battle-hp" class="text-rose-500 text-sm font-bold mt-0.5">♥ ♥ ♥ (3/3)</div>
+                        </div>
+                    </div>
+                    <!-- コピー中・カウンター中の状態バッジ -->
+                    <div id="my-buff-badges" class="flex flex-wrap gap-1 mb-2 empty:hidden"></div>
+
+                    <p id="my-battle-desc" class="text-[11px] text-slate-300 bg-slate-950/60 p-2 rounded-lg border border-slate-800 leading-relaxed mb-2">
+                        能力説明
+                    </p>
+                    <div id="my-skill-summary" class="text-[11px] text-purple-300 bg-purple-950/35 border border-purple-500/30 rounded-lg px-2.5 py-1.5 mb-2">
+                        スキル情報
+                    </div>
+                    <button id="btn-plot-wait" type="button" class="w-full py-2 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-600 text-xs font-bold text-slate-200 transition">
+                        ⏸ その場に待機を予約
+                    </button>
+                </div>
+
+                <!-- 観戦モードカード＆倍速切替 -->
+                <div id="spectator-banner-card" class="hidden bg-indigo-950/90 border border-indigo-500/50 rounded-xl p-4 shadow-lg">
+                    <div class="flex items-center justify-between text-indigo-200 font-bold text-sm mb-1">
+                        <span>👁️ 観戦モード中</span>
+                        <div class="flex items-center gap-1">
+                            <button type="button" data-speed="1" class="spectator-speed-btn px-2 py-0.5 rounded text-[11px] bg-indigo-600 text-white font-bold">1x</button>
+                            <button type="button" data-speed="2" class="spectator-speed-btn px-2 py-0.5 rounded text-[11px] bg-slate-800 text-slate-300 font-bold">2x</button>
+                            <button type="button" data-speed="4" class="spectator-speed-btn px-2 py-0.5 rounded text-[11px] bg-slate-800 text-slate-300 font-bold">4x</button>
+                        </div>
+                    </div>
+                    <p class="text-xs text-indigo-200/80">
+                        あなたの駒は脱落しました。最後の1人が決まるまで観戦＆スタンプ応援を楽しめます！
+                    </p>
+                </div>
+
+                <!-- 駒偵察ボックス -->
+                <div class="bg-slate-900/90 border border-slate-800 rounded-xl p-3.5 shadow-lg">
+                    <div class="text-[11px] text-slate-400 font-semibold mb-1">🔍 駒の偵察（盤上の駒をタップ）</div>
+                    <div id="battle-inspect-box" class="text-xs text-slate-300">
+                        盤面の駒をタップすると漢字の移動・スキル・残HPを確認できます。
+                    </div>
+                </div>
+            </div>
+
+            <!-- 中央カラム：操作モード切替＆将棋盤＋エフェクトCanvas -->
+            <div class="lg:col-span-6 flex flex-col items-center justify-center order-1 lg:order-2 w-full">
+                <!-- ガイドバナー -->
+                <div id="battle-guide-banner" class="w-full max-w-[580px] mb-2 px-4 py-2 rounded-xl bg-amber-500/20 border border-amber-500/50 text-center text-xs sm:text-sm font-bold text-amber-200">
+                    「移動」または「スキル」を選び、ハイライトされたマスをタップして予約してください！
+                </div>
+
+                <!-- 移動（🏃） / スキル（⚡） 切り替えバー -->
+                <div id="action-mode-bar" class="w-full max-w-[580px] grid grid-cols-2 gap-2 mb-2.5">
+                    <button id="btn-mode-move" type="button" class="py-2.5 px-3 rounded-xl bg-sky-500 text-slate-950 font-black text-xs sm:text-sm shadow-lg shadow-sky-500/25 border border-sky-300 transition flex items-center justify-center gap-1.5">
+                        <span>🏃</span> <span>移動・通常攻撃</span>
+                    </button>
+                    <button id="btn-mode-skill" type="button" class="py-2.5 px-3 rounded-xl bg-slate-800 hover:bg-purple-950/60 text-purple-200 font-black text-xs sm:text-sm border border-purple-500/40 transition flex items-center justify-center gap-1.5">
+                        <span>⚡</span> <span id="btn-skill-label">スキル発動</span>
+                    </button>
+                </div>
+
+                <!-- 将棋盤コンテナ（Canvasエフェクトレイヤー内蔵） -->
+                <div id="board-wrapper" class="w-full max-w-[580px] aspect-square p-1.5 sm:p-3 rounded-2xl bg-slate-900/85 border border-slate-800 shadow-2xl flex items-center justify-center relative">
+                    <div id="shogi-board" class="shogi-board w-full h-full grid rounded-lg overflow-hidden"></div>
+                    <!-- スキルエフェクト描画用Canvas -->
+                    <canvas id="fx-canvas" class="pointer-events-none absolute inset-0 w-full h-full z-30"></canvas>
+                    <!-- スタンプ＆ポップアップオーバーレイ -->
+                    <div id="stamp-overlay" class="pointer-events-none absolute inset-0 overflow-hidden z-40"></div>
+                </div>
+
+                <!-- 凡例 -->
+                <div class="flex flex-wrap items-center justify-center gap-3 mt-2.5 text-[11px] text-slate-400">
+                    <span class="flex items-center gap-1"><span class="w-2.5 h-2.5 rounded-full bg-sky-400 inline-block"></span> 移動</span>
+                    <span class="flex items-center gap-1"><span class="w-2.5 h-2.5 rounded bg-rose-500 inline-block"></span> 攻撃(1ダメ)</span>
+                    <span class="flex items-center gap-1"><span class="w-2.5 h-2.5 rounded bg-purple-500 inline-block"></span> スキル対象</span>
+                    <span class="flex items-center gap-1"><span class="w-2.5 h-2.5 rounded bg-orange-500 inline-block"></span> 範囲/貫通波及</span>
+                    <span class="flex items-center gap-1"><span class="w-2.5 h-2.5 rounded border-2 border-rose-500 inline-block"></span> カウンター構え</span>
+                </div>
+            </div>
+
+            <!-- 右カラム：合戦ログ・スタンプ応援・参戦者状況 -->
+            <div class="lg:col-span-3 flex flex-col gap-3 order-3">
+                <div class="bg-slate-900/90 border border-slate-800 rounded-xl p-3.5 shadow-lg flex flex-col h-52 lg:h-60">
+                    <div class="flex items-center justify-between border-b border-slate-800 pb-1.5 mb-2">
+                        <h3 class="text-xs font-bold text-slate-200">📜 合戦ログ</h3>
+                        <span class="text-[10px] text-slate-500">最新順</span>
+                    </div>
+                    <div id="battle-log" class="flex-1 overflow-y-auto space-y-1.5 text-xs pr-1"></div>
+                </div>
+
+                <div class="bg-slate-900/90 border border-slate-800 rounded-xl p-3.5 shadow-lg">
+                    <div class="text-xs font-bold text-slate-200 mb-2">📣 応援スタンプ＆コメント</div>
+                    <div class="grid grid-cols-5 gap-1 mb-2">
+                        <button type="button" data-stamp="🔥火球！" class="stamp-btn py-1.5 rounded bg-slate-800 hover:bg-slate-700 text-sm" title="火球！">🔥</button>
+                        <button type="button" data-stamp="🪞能力コピー！" class="stamp-btn py-1.5 rounded bg-slate-800 hover:bg-slate-700 text-sm" title="能力コピー！">🪞</button>
+                        <button type="button" data-stamp="🛡️反撃構え！" class="stamp-btn py-1.5 rounded bg-slate-800 hover:bg-slate-700 text-sm" title="反撃構え！">🛡️</button>
+                        <button type="button" data-stamp="🐟大回遊！" class="stamp-btn py-1.5 rounded bg-slate-800 hover:bg-slate-700 text-sm" title="大回遊！">🐟</button>
+                        <button type="button" data-stamp="👏見事！" class="stamp-btn py-1.5 rounded bg-slate-800 hover:bg-slate-700 text-sm" title="見事！">👏</button>
+                    </div>
+                    <form id="chat-form" class="flex gap-1.5">
+                        <input id="chat-input" type="text" maxlength="30" placeholder="ひとこと応援..."
+                            class="flex-1 bg-slate-950 border border-slate-700 rounded-lg px-2.5 py-1 text-xs text-white focus:outline-none focus:border-amber-400">
+                        <button type="submit" class="px-2.5 py-1 rounded-lg bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs">
+                            送信
+                        </button>
+                    </form>
+                </div>
+
+                <div class="bg-slate-900/90 border border-slate-800 rounded-xl p-3.5 shadow-lg flex flex-col max-h-56">
+                    <div class="flex items-center justify-between border-b border-slate-800 pb-1.5 mb-2">
+                        <h3 class="text-xs font-bold text-slate-200">⚔️ 参戦者状況</h3>
+                        <span id="battle-survivor-ratio" class="text-[11px] text-amber-400 font-bold">0/0</span>
+                    </div>
+                    <div id="battle-survivor-list" class="flex-1 overflow-y-auto grid grid-cols-2 gap-1 pr-1"></div>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <!-- ==================== 決着リザルトモーダル ==================== -->
+    <div id="result-modal" class="hidden fixed inset-0 z-50 bg-slate-950/85 backdrop-blur-sm flex items-center justify-center p-4">
+        <div class="bg-slate-900 border-2 border-amber-500/60 rounded-2xl max-w-md w-full p-6 text-center shadow-2xl">
+            <div id="result-crown" class="text-5xl mb-2">👑</div>
+            <h2 id="result-title" class="text-2xl sm:text-3xl font-shogi font-black text-amber-300 mb-1">天下統一！</h2>
+            <p id="result-subtitle" class="text-xs text-slate-400 mb-4">最後の1駒として生き残りました</p>
+
+            <div class="bg-slate-950/85 rounded-xl p-4 border border-slate-800 mb-5 flex flex-col items-center">
+                <span class="text-[11px] text-slate-400 mb-2">覇者の漢字</span>
+                <div id="winner-piece-visual" class="w-16 h-20 bg-gradient-to-b from-amber-300 to-amber-500 text-slate-950 font-shogi font-black text-4xl flex items-center justify-center shadow-lg mb-2" style="clip-path: polygon(50% 4%, 92% 20%, 100% 98%, 0% 98%, 8% 20%);">
+                    火
+                </div>
+                <div id="winner-name" class="font-bold text-base text-white">覇者名</div>
+                <div id="winner-stats" class="text-xs text-amber-400 mt-1">撃破数: 0体 / 決着ターン: 1</div>
+            </div>
+
+            <div class="flex flex-col sm:flex-row gap-2.5">
+                <button id="btn-close-result" type="button" class="flex-1 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-xs font-bold text-slate-200 transition">
+                    盤面を見る
+                </button>
+                <button id="btn-rematch-room" type="button" class="flex-1 py-2.5 rounded-xl bg-gradient-to-r from-amber-500 to-orange-600 hover:from-amber-400 hover:to-orange-500 text-slate-950 font-bold text-sm shadow-lg transition">
+                    同じ設定で再戦
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ==================== 漢字能力図鑑モーダル ==================== -->
+    <div id="encyclopedia-modal" class="hidden fixed inset-0 z-50 bg-slate-950/85 backdrop-blur-sm flex items-center justify-center p-4">
+        <div class="bg-slate-900 border border-amber-500/40 rounded-2xl max-w-3xl w-full max-h-[85vh] flex flex-col shadow-2xl">
+            <div class="p-4 sm:p-5 border-b border-slate-800 flex items-center justify-between">
+                <div>
+                    <h2 class="text-lg sm:text-xl font-shogi font-bold text-amber-300">📖 漢字能力＆固有スキル図鑑</h2>
+                    <p class="text-xs text-slate-400">全攻撃1ダメージ固定・能力コピー（写/鏡/模/盗/影）＆カウンター（反/盾/返/刺/棘）搭載</p>
+                </div>
+                <button id="btn-close-encyclopedia" type="button" class="w-8 h-8 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 flex items-center justify-center font-bold">
+                    ✕
+                </button>
+            </div>
+            <div class="p-4 sm:p-5 overflow-y-auto space-y-4 text-xs">
+                <div class="bg-slate-950/75 p-4 rounded-xl border border-slate-800 space-y-1.5 text-slate-300">
+                    <h3 class="font-bold text-sm text-sky-300 mb-1">⚔️ 新システム＆ルール概要</h3>
+                    <p>・<strong class="text-white">盤面サイズ：</strong>5人未満は4×4、5〜9人は5×5、10〜19人は6×6、20〜30人は10×10。</p>
+                    <p>・<strong class="text-purple-300">能力コピー（写・鏡・模・盗・影）：</strong>スキルで3マス以内の敵を指定すると、相手の移動パターン・スキル・タイプを奪って自分のものにし、次ターンからそのまま発動できます。</p>
+                    <p>・<strong class="text-rose-300">カウンター（反・盾・返・刺・棘）：</strong>スキル「カウンター構え」を使うと次ターン終了時まで反撃態勢に入り、敵から攻撃やダメージスキルを受けると無効化しつつ攻撃者に1ダメージの反撃ビームを撃ち返します。</p>
+                </div>
+                <div id="encyclopedia-grid" class="grid grid-cols-1 sm:grid-cols-2 gap-2.5"></div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // ============================================================================
+        // 1. 漢字ステータス・移動・固有スキルデータベース（能力コピー＆カウンター含む）
+        // ============================================================================
+        const SPECIAL_KANJI_DB = {
+            '火': {
+                name: '業火放射型', hp: 3, moveType: 'KING', moveTag: '全方向1マス移動',
+                desc: '全方向1マスへ移動でき、スキル「火球放射」で上下左右2マス先へ火球を放つバランス型。',
+                skill: { id: 'FIREBALL_2', name: '火球放射', cd: 1, tag: '上下左右2マス先へ火球（通過・着弾に1ダメ）' }
+            },
+            '炎': {
+                name: '紅蓮烈火型', hp: 3, moveType: 'KING', moveTag: '全方向1マス移動',
+                desc: '火の力を極めた炎の使い手。上下左右2マス先への火球攻撃で遠距離の敵を焼き払う。',
+                skill: { id: 'FIREBALL_2', name: '紅蓮火球', cd: 1, tag: '上下左右2マス先へ火球（通過・着弾に1ダメ）' }
+            },
+            '鮪': {
+                name: '大回遊突進型', hp: 1, moveType: 'ROOK_PIERCE', moveTag: '上下左右・壁まで貫通直進',
+                desc: 'HP1の超攻撃型。移動は壁まで貫通し、スキル「大回遊」で縦横1列を端から端まで高速回遊して軌道上の敵すべてに1ダメージ！',
+                skill: { id: 'TUNA_SWEEP', name: '大回遊', cd: 2, tag: '縦横1列の端から端まで回遊し軌道上の敵全員に1ダメ' }
+            },
+            '写': {
+                name: '能力転写型', hp: 3, moveType: 'KING', moveTag: '全方向1マス移動（コピー可）',
+                desc: 'スキル「能力コピー」で射程3マス以内の敵1体の移動パターン・固有スキル・タイプを丸ごとコピーし、自分の能力として使える！',
+                skill: { id: 'COPY_ABILITY', name: '能力コピー', cd: 1, tag: '射程3マス以内の敵1体の移動・スキル・タイプを奪う' }
+            },
+            '鏡': {
+                name: '明鏡模倣型', hp: 3, moveType: 'SILVER', moveTag: '銀将の5方向移動（コピー可）',
+                desc: '敵の技を映し取る鏡の使い手。3マス以内の敵の移動と固有スキルをコピーして自分の武器にする。',
+                skill: { id: 'COPY_ABILITY', name: '鏡面コピー', cd: 1, tag: '射程3マス以内の敵1体の移動・スキル・タイプを奪う' }
+            },
+            '模': {
+                name: '完全模倣型', hp: 3, moveType: 'GOLD', moveTag: '金将の6方向移動（コピー可）',
+                desc: '強者の能力を自在に模倣するトリックスター。コピー後は奪ったスキルを即座に戦術へ組み込める。',
+                skill: { id: 'COPY_ABILITY', name: '完全模倣', cd: 1, tag: '射程3マス以内の敵1体の移動・スキル・タイプを奪う' }
+            },
+            '盗': {
+                name: '怪盗奪取型', hp: 3, moveType: 'NINJA', moveTag: '斜め1〜2マス跳躍（コピー可）',
+                desc: '素早い跳躍で近づき、3マス以内の敵から移動能力と固有スキルを盗み取る怪盗。',
+                skill: { id: 'COPY_ABILITY', name: '能力強奪', cd: 1, tag: '射程3マス以内の敵1体の移動・スキル・タイプを奪う' }
+            },
+            '影': {
+                name: '影武者複製型', hp: 3, moveType: 'WIND_WARP', moveTag: '周囲2マス瞬身移動（コピー可）',
+                desc: '周囲2マスへの瞬身移動と能力コピーを併せ持ち、盤面の最強スキルを複製して戦う影の刺客。',
+                skill: { id: 'COPY_ABILITY', name: '影写し', cd: 1, tag: '射程3マス以内の敵1体の移動・スキル・タイプを奪う' }
+            },
+            '反': {
+                name: '絶対反撃型', hp: 3, moveType: 'KING', moveTag: '全方向1マス移動',
+                desc: 'スキル「カウンター構え」で次ターン終了時まで反撃態勢に入り、攻撃を受けるとダメージを無効化しつつ1ダメージの反撃ビームを撃ち返す！',
+                skill: { id: 'COUNTER_STANCE', name: 'カウンター構え', cd: 2, tag: '自身をタップで反撃態勢（次T終了まで被弾無効＋1ダメ反撃）' }
+            },
+            '盾': {
+                name: '鉄壁盾反型', hp: 4, moveType: 'CROSS_1', moveTag: '上下左右1マス移動（HP4）',
+                desc: 'HP4の重装甲と「カウンター構え」を併せ持つ守護神。不用意に手を出した敵へ反撃ビームで手痛いお返しを与える。',
+                skill: { id: 'COUNTER_STANCE', name: 'イージス反撃', cd: 2, tag: '自身をタップで反撃態勢（次T終了まで被弾無効＋1ダメ反撃）' }
+            },
+            '返': {
+                name: '倍返し型', hp: 3, moveType: 'GOLD', moveTag: '金将の6方向移動',
+                desc: '受けた攻撃を鮮やかに弾き返す反撃の達人。カウンター構え中の被弾を無効化し、攻撃者に1ダメージを与える。',
+                skill: { id: 'COUNTER_STANCE', name: '意趣返し', cd: 2, tag: '自身をタップで反撃態勢（次T終了まで被弾無効＋1ダメ反撃）' }
+            },
+            '刺': {
+                name: '反撃棘針型', hp: 3, moveType: 'SILVER', moveTag: '銀将の5方向移動',
+                desc: '全身に鋭い棘を纏うカウンター特化型。反撃態勢中に攻撃してきた敵を1ダメージの反撃で貫く。',
+                skill: { id: 'COUNTER_STANCE', name: '棘カウンター', cd: 2, tag: '自身をタップで反撃態勢（次T終了まで被弾無効＋1ダメ反撃）' }
+            },
+            '棘': {
+                name: '荊棘守護型', hp: 3, moveType: 'KING', moveTag: '全方向1マス移動',
+                desc: '荊の結界で身を守りながら反撃の機会を窺う防御カウンター型。',
+                skill: { id: 'COUNTER_STANCE', name: '荊棘の構え', cd: 2, tag: '自身をタップで反撃態勢（次T終了まで被弾無効＋1ダメ反撃）' }
+            },
+            '雷': {
+                name: '紫電落雷型', hp: 3, moveType: 'BISHOP', moveTag: '斜め4方向・直線移動',
+                desc: '斜め移動に加え、スキル「落雷」で2〜3マス先の指定した1マスへピンポイントに落雷を落とす。',
+                skill: { id: 'LIGHTNING_STRIKE', name: '落雷', cd: 2, tag: '距離2〜3マスの指定1マスに落雷（1ダメ）' }
+            },
+            '氷': {
+                name: '氷結波型', hp: 3, moveType: 'KING', moveTag: '全方向1マス移動',
+                desc: 'スキル「氷結波」で周囲8マスの敵すべてに1ダメージを与え、次ターンの行動を封じる（凍結）。',
+                skill: { id: 'FROST_NOVA', name: '氷結波', cd: 2, tag: '周囲8マスに1ダメ＋次ターン凍結付与' }
+            },
+            '雪': {
+                name: '吹雪凍結型', hp: 3, moveType: 'SILVER', moveTag: '斜め4方向＋正面1マス',
+                desc: '銀将の足運びと周囲8マスへ吹き荒れる氷結波で、群がる敵の動きを止める。',
+                skill: { id: 'FROST_NOVA', name: '吹雪波', cd: 2, tag: '周囲8マスに1ダメ＋次ターン凍結付与' }
+            },
+            '弓': {
+                name: '長弓狙撃型', hp: 3, moveType: 'GOLD', moveTag: '金将の6方向移動',
+                desc: '金将の堅実な動きに加え、スキル「狙撃」で2〜3マス先の指定マスへ矢を放ち1ダメージを与える。',
+                skill: { id: 'SNIPE_SHOT', name: '狙撃', cd: 1, tag: '距離2〜3マスの指定1マスを狙撃（1ダメ）' }
+            },
+            '矢': {
+                name: '飛矢狙撃型', hp: 3, moveType: 'GOLD', moveTag: '金将の6方向移動',
+                desc: '2〜3マス先を射抜く長距離狙撃スキルを持つスナイパー。敵の射程外から確実に1削る。',
+                skill: { id: 'SNIPE_SHOT', name: '飛矢狙撃', cd: 1, tag: '距離2〜3マスの指定1マスを狙撃（1ダメ）' }
+            },
+            '爆': {
+                name: '十字爆破型', hp: 3, moveType: 'KING', moveTag: '全方向1マス移動',
+                desc: 'スキル「爆破」で2マス先に爆弾を投擲し、着弾点とその上下左右（十字5マス）を同時に爆破する！',
+                skill: { id: 'CROSS_BOMB', name: '十字爆破', cd: 2, tag: '2マス先に投擲し着弾＋上下左右（十字）に1ダメ' }
+            },
+            '弾': {
+                name: '炸裂弾型', hp: 3, moveType: 'CROSS_1', moveTag: '上下左右1マス移動',
+                desc: '2マス先への投擲＋十字爆破スキルで密集した敵をまとめて吹っ飛ばす爆撃手。',
+                skill: { id: 'CROSS_BOMB', name: '炸裂弾', cd: 2, tag: '2マス先に投擲し着弾＋上下左右（十字）に1ダメ' }
+            },
+            '風': {
+                name: '烈風吹き飛ばし型', hp: 2, moveType: 'WIND_WARP', moveTag: '周囲2マス圏内へ瞬身移動',
+                desc: '周囲2マス圏内へ軽快に動け、スキル「烈風」で直線3マス先まで突風を送り、当たった敵に1ダメ＋1マスノックバック！',
+                skill: { id: 'GALE_BLAST', name: '烈風', cd: 1, tag: '直線1〜3マスに突風（1ダメ＋進行方向へ1マス押出し）' }
+            },
+            '嵐': {
+                name: '暴風ノックバック型', hp: 3, moveType: 'DRAGON', moveTag: '龍王（縦横直進＋斜め1マス）',
+                desc: '龍王の機動力と直線3マスへの吹き飛ばし突風を併せ持つ荒くれ者。',
+                skill: { id: 'GALE_BLAST', name: '暴風撃', cd: 1, tag: '直線1〜3マスに突風（1ダメ＋進行方向へ1マス押出し）' }
+            },
+            '癒': {
+                name: '生命再生型', hp: 3, moveType: 'KING', moveTag: '全方向1マス移動',
+                desc: 'スキル「再生」でその場に集中し、自身のHPを1回復する（最大HPまで）。長期戦で真価を発揮。',
+                skill: { id: 'SELF_HEAL', name: '再生', cd: 3, tag: '自身をタップで発動：自分のHPを1回復' }
+            },
+            '薬': {
+                name: '仙薬調合型', hp: 3, moveType: 'GOLD', moveTag: '金将の6方向移動',
+                desc: '仙薬の力で自身のHPを1回復できる粘り強いサバイバー。',
+                skill: { id: 'SELF_HEAL', name: '仙薬再生', cd: 3, tag: '自身をタップで発動：自分のHPを1回復' }
+            },
+            '龍': {
+                name: '龍王覇道型', hp: 4, moveType: 'DRAGON', moveTag: '龍王（縦横直進＋斜め1マス）',
+                desc: 'HP4の重厚さと龍王の機動力、さらに周囲8マスへ放つ「龍気波」を備えた王道エース。',
+                skill: { id: 'FROST_NOVA', name: '龍気波', cd: 2, tag: '周囲8マスに1ダメ＋凍結付与' }
+            },
+            '馬': {
+                name: '龍馬疾駆型', hp: 3, moveType: 'HORSE', moveTag: '龍馬（斜め直進＋縦横1マス）',
+                desc: '斜め全通しと縦横1マスの機動力に加え、直線突風スキルで陣形を崩す。',
+                skill: { id: 'GALE_BLAST', name: '天馬疾風', cd: 1, tag: '直線1〜3マスに突風（1ダメ＋押出し）' }
+            },
+            '王': {
+                name: '玉将帝王型', hp: 4, moveType: 'KING', moveTag: '全方向1マス移動（HP4）',
+                desc: '高い耐久力（HP4）と狙撃スキルで盤面を支配する帝王。',
+                skill: { id: 'SNIPE_SHOT', name: '帝王の矢', cd: 2, tag: '距離2〜3マスの指定1マスを狙撃（1ダメ）' }
+            },
+            '忍': {
+                name: '影分身奇襲型', hp: 3, moveType: 'NINJA', moveTag: '斜め1〜2マス跳躍',
+                desc: '斜め跳躍で敵の死角に入り込み、落雷や狙撃で素早く仕留める隠密。',
+                skill: { id: 'LIGHTNING_STRIKE', name: '雷遁', cd: 2, tag: '距離2〜3マスの指定1マスに落雷（1ダメ）' }
+            },
+            '亀': {
+                name: '玄武重装甲型', hp: 4, moveType: 'CROSS_1', moveTag: '上下左右1マス移動（HP4）',
+                desc: 'HP4の鉄壁耐久と自己回復スキル「玄武甲羅」で最後まで生き残る要塞。',
+                skill: { id: 'SELF_HEAL', name: '玄武再生', cd: 3, tag: '自身をタップで発動：自分のHPを1回復' }
+            },
+            '剣': {
+                name: '剣豪一閃型', hp: 3, moveType: 'ROOK', moveTag: '飛車（上下左右・直線移動）',
+                desc: '縦横の鋭い踏み込みと周囲8マスを薙ぎ払う衝撃波を持つ剣豪。',
+                skill: { id: 'FROST_NOVA', name: '旋風剣閃', cd: 2, tag: '周囲8マスに1ダメ＋凍結付与' }
+            },
+            '鷹': {
+                name: '蒼鷹急降下型', hp: 3, moveType: 'BISHOP', moveTag: '角行（斜め4方向・直線移動）',
+                desc: '大空から斜めに急襲し、2〜3マス先の敵を正確に射抜く猛禽。',
+                skill: { id: 'SNIPE_SHOT', name: '鷹の目狙撃', cd: 1, tag: '距離2〜3マスの指定1マスを狙撃（1ダメ）' }
+            },
+            '鬼': {
+                name: '羅刹豪腕型', hp: 4, moveType: 'GOLD', moveTag: '金将の6方向移動（HP4）',
+                desc: 'HP4の怪力と2マス先への十字爆破スキルで周囲を粉砕する鬼神。',
+                skill: { id: 'CROSS_BOMB', name: '鬼神爆砕', cd: 2, tag: '2マス先に投擲し着弾＋上下左右（十字）に1ダメ' }
+            }
+        };
+
+        const GENERIC_MOVES = [
+            { moveType: 'ROOK', moveTag: '飛車（上下左右・直線移動）' },
+            { moveType: 'BISHOP', moveTag: '角行（斜め4方向・直線移動）' },
+            { moveType: 'KING', moveTag: '全方向1マス移動' },
+            { moveType: 'GOLD', moveTag: '金将の6方向移動' },
+            { moveType: 'SILVER', moveTag: '銀将の5方向移動' },
+            { moveType: 'DRAGON', moveTag: '龍王（縦横直進＋斜め1マス）' },
+            { moveType: 'HORSE', moveTag: '龍馬（斜め直進＋縦横1マス）' }
+        ];
+
+        const GENERIC_SKILLS = [
+            { id: 'FIREBALL_2', name: '火球射出', cd: 1, tag: '上下左右2マス先へ火球（1ダメ）' },
+            { id: 'SNIPE_SHOT', name: '遠距離射撃', cd: 2, tag: '距離2〜3マスの指定1マスに1ダメ' },
+            { id: 'FROST_NOVA', name: '衝撃波', cd: 2, tag: '周囲8マスに1ダメ＋凍結付与' },
+            { id: 'CROSS_BOMB', name: '十字爆撃', cd: 2, tag: '2マス先に投擲し十字範囲に1ダメ' },
+            { id: 'GALE_BLAST', name: '突風撃', cd: 1, tag: '直線1〜3マスに突風（1ダメ＋押出し）' },
+            { id: 'COPY_ABILITY', name: '能力模倣', cd: 1, tag: '射程3マス以内の敵1体の能力をコピー' },
+            { id: 'COUNTER_STANCE', name: '反撃構え', cd: 2, tag: '自身をタップで反撃態勢（被弾無効＋1ダメ反撃）' },
+            { id: 'SELF_HEAL', name: '応急手当', cd: 3, tag: '自身をタップでHPを1回復' }
+        ];
+
+        const RANDOM_KANJI_LIST = Object.keys(SPECIAL_KANJI_DB);
+        const RANDOM_NAMES = ['織田信長', '武田信玄', '上杉謙信', '伊達政宗', '真田幸村', '宮本武蔵', '服部半蔵', '風魔小太郎', '本多忠勝', '徳川家康', '前田慶次', '立花宗茂'];
+
+        function getKanjiSpec(char) {
+            const c = (char || '火').trim().charAt(0) || '火';
+            if (SPECIAL_KANJI_DB[c]) {
+                return { kanji: c, isSpecial: true, ...JSON.parse(JSON.stringify(SPECIAL_KANJI_DB[c])) };
+            }
+            const code = c.codePointAt(0) || 1;
+            const mv = GENERIC_MOVES[code % GENERIC_MOVES.length];
+            const sk = GENERIC_SKILLS[Math.floor(code / 7) % GENERIC_SKILLS.length];
+            const hp = (code % 5 === 0) ? 4 : 3;
+            return {
+                kanji: c,
+                isSpecial: false,
+                name: `${c}の武士型`,
+                hp: hp,
+                moveType: mv.moveType,
+                moveTag: mv.moveTag,
+                skill: { ...sk },
+                desc: `「${c}」の宿命を帯びた駒。${mv.moveTag}とスキル「${sk.name}」で戦場を駆け抜ける。`
+            };
+        }
+
+        function getBoardSizeForPlayers(count) {
+            if (count < 5) return 4;
+            if (count < 10) return 5;
+            if (count < 20) return 6;
+            return 10;
+        }
+
+        // ============================================================================
+        // 2. Canvasビジュアルエフェクトシステム（能力コピー粒子吸収＆カウンター反撃ビーム含む）
+        // ============================================================================
+        const fxSystem = {
+            canvas: null,
+            ctx: null,
+            effects: [],
+            particles: [],
+            popups: [],
+            rafId: null,
+            boardSize: 5
+        };
+
+        function initFxCanvas() {
+            fxSystem.canvas = document.getElementById('fx-canvas');
+            if (!fxSystem.canvas) return;
+            fxSystem.ctx = fxSystem.canvas.getContext('2d');
+            resizeFxCanvas();
+            window.addEventListener('resize', resizeFxCanvas);
+            if (!fxSystem.rafId) {
+                fxSystem.rafId = requestAnimationFrame(fxLoop);
+            }
+        }
+
+        function resizeFxCanvas() {
+            if (!fxSystem.canvas) return;
+            const rect = fxSystem.canvas.getBoundingClientRect();
+            const dpr = window.devicePixelRatio || 1;
+            fxSystem.canvas.width = Math.max(1, Math.floor(rect.width * dpr));
+            fxSystem.canvas.height = Math.max(1, Math.floor(rect.height * dpr));
+        }
+
+        function cellToCanvasPx(gx, gy, boardSize) {
+            const canvas = fxSystem.canvas;
+            if (!canvas) return { x: 0, y: 0, cellW: 40 };
+            const boardEl = document.getElementById('shogi-board');
+            const wrapEl = document.getElementById('board-wrapper');
+            if (boardEl && wrapEl) {
+                const bRect = boardEl.getBoundingClientRect();
+                const wRect = wrapEl.getBoundingClientRect();
+                const dpr = window.devicePixelRatio || 1;
+                const offsetX = (bRect.left - wRect.left + 6) * dpr;
+                const offsetY = (bRect.top - wRect.top + 6) * dpr;
+                const innerW = Math.max(10, (bRect.width - 12) * dpr);
+                const innerH = Math.max(10, (bRect.height - 12) * dpr);
+                const cellW = innerW / boardSize;
+                const cellH = innerH / boardSize;
+                return {
+                    x: offsetX + (gx + 0.5) * cellW,
+                    y: offsetY + (gy + 0.5) * cellH,
+                    cellW
+                };
+            }
+            const cellW = canvas.width / boardSize;
+            return { x: (gx + 0.5) * cellW, y: (gy + 0.5) * cellW, cellW };
+        }
+
+        function spawnSparks(px, py, color, count = 16, speedScale = 1) {
+            for (let i = 0; i < count; i++) {
+                const angle = Math.random() * Math.PI * 2;
+                const speed = (1.8 + Math.random() * 4.5) * speedScale;
+                fxSystem.particles.push({
+                    x: px,
+                    y: py,
+                    vx: Math.cos(angle) * speed,
+                    vy: Math.sin(angle) * speed,
+                    radius: 2 + Math.random() * 3.5,
+                    color,
+                    alpha: 1,
+                    decay: 0.025 + Math.random() * 0.025
+                });
+            }
+        }
+
+        function spawnDamagePopup(gx, gy, boardSize, text = '-1', color = '#fb7185') {
+            const pos = cellToCanvasPx(gx, gy, boardSize);
+            fxSystem.popups.push({
+                x: pos.x,
+                y: pos.y - pos.cellW * 0.15,
+                vy: -1.4,
+                text,
+                color,
+                alpha: 1
+            });
+        }
+
+        function triggerBoardShake() {
+            const boardEl = document.getElementById('shogi-board');
+            if (!boardEl) return;
+            boardEl.classList.remove('board-shake');
+            void boardEl.offsetWidth;
+            boardEl.classList.add('board-shake');
+        }
+
+        function playVisualEffect(ev, boardSize) {
+            resizeFxCanvas();
+            fxSystem.boardSize = boardSize;
+            const fromPos = cellToCanvasPx(ev.fromX, ev.fromY, boardSize);
+            const toPos = cellToCanvasPx(ev.toX, ev.toY, boardSize);
+
+            if (ev.type === 'FIREBALL_2' || ev.type === 'SNIPE_SHOT' || ev.type === 'GALE_BLAST') {
+                const colorMap = {
+                    FIREBALL_2: '#f97316',
+                    SNIPE_SHOT: '#fbbf24',
+                    GALE_BLAST: '#34d399'
+                };
+                const col = colorMap[ev.type] || '#f97316';
+                fxSystem.effects.push({
+                    kind: 'PROJECTILE',
+                    subType: ev.type,
+                    x1: fromPos.x,
+                    y1: fromPos.y,
+                    x2: toPos.x,
+                    y2: toPos.y,
+                    cellW: fromPos.cellW,
+                    color: col,
+                    progress: 0,
+                    speed: 0.075,
+                    exploded: false
+                });
+            } else if (ev.type === 'LIGHTNING_STRIKE') {
+                fxSystem.effects.push({
+                    kind: 'LIGHTNING',
+                    x: toPos.x,
+                    y: toPos.y,
+                    cellW: toPos.cellW,
+                    progress: 0,
+                    speed: 0.055
+                });
+                spawnSparks(toPos.x, toPos.y, '#fde047', 22, 1.3);
+                triggerBoardShake();
+            } else if (ev.type === 'FROST_NOVA') {
+                fxSystem.effects.push({
+                    kind: 'RING_WAVE',
+                    x: fromPos.x,
+                    y: fromPos.y,
+                    maxR: fromPos.cellW * 1.65,
+                    color: '#38bdf8',
+                    fill: 'rgba(56, 189, 248, 0.25)',
+                    progress: 0,
+                    speed: 0.05
+                });
+                spawnSparks(fromPos.x, fromPos.y, '#7dd3fc', 24, 1.2);
+            } else if (ev.type === 'CROSS_BOMB') {
+                fxSystem.effects.push({
+                    kind: 'PROJECTILE',
+                    subType: 'CROSS_BOMB',
+                    x1: fromPos.x,
+                    y1: fromPos.y,
+                    x2: toPos.x,
+                    y2: toPos.y,
+                    cellW: fromPos.cellW,
+                    color: '#ef4444',
+                    progress: 0,
+                    speed: 0.08,
+                    exploded: false
+                });
+            } else if (ev.type === 'TUNA_SWEEP' || ev.type === 'PIERCE') {
+                const pathPx = (ev.pathCells || []).map(c => cellToCanvasPx(c.x, c.y, boardSize));
+                fxSystem.effects.push({
+                    kind: 'BEAM_TRAIL',
+                    from: fromPos,
+                    to: toPos,
+                    pathPx,
+                    cellW: fromPos.cellW,
+                    color: ev.type === 'TUNA_SWEEP' ? '#38bdf8' : '#fb923c',
+                    progress: 0,
+                    speed: 0.055
+                });
+                pathPx.forEach(p => spawnSparks(p.x, p.y, '#bae6fd', 6, 0.9));
+                triggerBoardShake();
+            } else if (ev.type === 'SELF_HEAL') {
+                fxSystem.effects.push({
+                    kind: 'HEAL_AURA',
+                    x: fromPos.x,
+                    y: fromPos.y,
+                    cellW: fromPos.cellW,
+                    progress: 0,
+                    speed: 0.045
+                });
+                spawnSparks(fromPos.x, fromPos.y, '#4ade80', 18, 0.85);
+            } else if (ev.type === 'COPY_ABILITY') {
+                // 対象から術者へ紫の粒子が吸い込まれるコピー演出
+                fxSystem.effects.push({
+                    kind: 'COPY_ABSORB',
+                    fromX: toPos.x,
+                    fromY: toPos.y,
+                    toX: fromPos.x,
+                    toY: fromPos.y,
+                    cellW: fromPos.cellW,
+                    progress: 0,
+                    speed: 0.045
+                });
+                spawnSparks(toPos.x, toPos.y, '#c084fc', 20, 1.1);
+                spawnDamagePopup(ev.fromX, ev.fromY, boardSize, `🪞「${ev.copiedKanji || '?'}」コピー!`, '#e879f9');
+            } else if (ev.type === 'COUNTER_STANCE') {
+                fxSystem.effects.push({
+                    kind: 'COUNTER_AURA',
+                    x: fromPos.x,
+                    y: fromPos.y,
+                    cellW: fromPos.cellW,
+                    progress: 0,
+                    speed: 0.05
+                });
+                spawnSparks(fromPos.x, fromPos.y, '#fb7185', 16, 0.9);
+                spawnDamagePopup(ev.fromX, ev.fromY, boardSize, '🛡️ 反撃構え!', '#fda4af');
+            } else if (ev.type === 'COUNTER_BEAM') {
+                // 反撃発動時の高速カウンタービーム
+                fxSystem.effects.push({
+                    kind: 'COUNTER_BEAM',
+                    x1: fromPos.x,
+                    y1: fromPos.y,
+                    x2: toPos.x,
+                    y2: toPos.y,
+                    cellW: fromPos.cellW,
+                    progress: 0,
+                    speed: 0.05
+                });
+                spawnSparks(fromPos.x, fromPos.y, '#fbbf24', 16, 1.1);
+                spawnSparks(toPos.x, toPos.y, '#f43f5e', 26, 1.4);
+                triggerBoardShake();
+                spawnDamagePopup(ev.fromX, ev.fromY, boardSize, '🛡️ 無効化!', '#fde047');
+            } else if (ev.type === 'SLASH') {
+                fxSystem.effects.push({
+                    kind: 'SLASH',
+                    x: toPos.x,
+                    y: toPos.y,
+                    cellW: toPos.cellW,
+                    progress: 0,
+                    speed: 0.08
+                });
+                spawnSparks(toPos.x, toPos.y, '#fda4af', 14, 1.0);
+            }
+
+            if (ev.hitCoords && ev.hitCoords.length > 0) {
+                ev.hitCoords.forEach(hc => {
+                    spawnDamagePopup(hc.x, hc.y, boardSize, '-1', '#fb7185');
+                });
+            }
+            if (ev.healCoord) {
+                spawnDamagePopup(ev.healCoord.x, ev.healCoord.y, boardSize, '+1 HP', '#4ade80');
+            }
+        }
+
+        function fxLoop() {
+            const ctx = fxSystem.ctx;
+            const canvas = fxSystem.canvas;
+            if (ctx && canvas) {
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+                for (let i = fxSystem.effects.length - 1; i >= 0; i--) {
+                    const ef = fxSystem.effects[i];
+                    ef.progress += ef.speed;
+
+                    if (ef.kind === 'PROJECTILE') {
+                        const t = Math.min(1, ef.progress);
+                        const cx = ef.x1 + (ef.x2 - ef.x1) * t;
+                        const cy = ef.y1 + (ef.y2 - ef.y1) * t;
+
+                        ctx.save();
+                        const grad = ctx.createLinearGradient(ef.x1, ef.y1, cx, cy);
+                        grad.addColorStop(0, 'rgba(255,255,255,0)');
+                        grad.addColorStop(1, ef.color);
+                        ctx.strokeStyle = grad;
+                        ctx.lineWidth = ef.cellW * 0.24;
+                        ctx.lineCap = 'round';
+                        ctx.beginPath();
+                        ctx.moveTo(ef.x1, ef.y1);
+                        ctx.lineTo(cx, cy);
+                        ctx.stroke();
+
+                        ctx.fillStyle = '#fff';
+                        ctx.shadowColor = ef.color;
+                        ctx.shadowBlur = 18;
+                        ctx.beginPath();
+                        ctx.arc(cx, cy, ef.cellW * 0.18, 0, Math.PI * 2);
+                        ctx.fill();
+                        ctx.restore();
+
+                        if (t >= 1 && !ef.exploded) {
+                            ef.exploded = true;
+                            spawnSparks(ef.x2, ef.y2, ef.color, 24, 1.3);
+                            triggerBoardShake();
+                            if (ef.subType === 'CROSS_BOMB') {
+                                fxSystem.effects.push({
+                                    kind: 'CROSS_BLAST',
+                                    x: ef.x2,
+                                    y: ef.y2,
+                                    cellW: ef.cellW,
+                                    progress: 0,
+                                    speed: 0.06
+                                });
+                            } else {
+                                fxSystem.effects.push({
+                                    kind: 'RING_WAVE',
+                                    x: ef.x2,
+                                    y: ef.y2,
+                                    maxR: ef.cellW * 0.95,
+                                    color: ef.color,
+                                    fill: 'rgba(251, 146, 60, 0.3)',
+                                    progress: 0,
+                                    speed: 0.07
+                                });
+                            }
+                            fxSystem.effects.splice(i, 1);
+                            continue;
+                        }
+                    } else if (ef.kind === 'COPY_ABSORB') {
+                        const alpha = Math.max(0, 1 - ef.progress * 0.6);
+                        ctx.save();
+                        ctx.globalAlpha = alpha;
+                        // ターゲットの紫リング
+                        ctx.strokeStyle = '#c084fc';
+                        ctx.lineWidth = 3;
+                        ctx.beginPath();
+                        ctx.arc(ef.fromX, ef.fromY, ef.cellW * (0.45 * (1 - ef.progress * 0.5)), 0, Math.PI * 2);
+                        ctx.stroke();
+
+                        // 螺旋軌道で術者へ吸い込まれる光の粒
+                        const orbs = 8;
+                        for (let k = 0; k < orbs; k++) {
+                            const localT = Math.min(1, Math.max(0, ef.progress * 1.3 - k * 0.04));
+                            const bx = ef.fromX + (ef.toX - ef.fromX) * localT;
+                            const by = ef.fromY + (ef.toY - ef.fromY) * localT;
+                            const perpX = -(ef.toY - ef.fromY) * 0.18 * Math.sin(localT * Math.PI * 2 + k);
+                            const perpY = (ef.toX - ef.fromX) * 0.18 * Math.sin(localT * Math.PI * 2 + k);
+                            ctx.fillStyle = k % 2 === 0 ? '#e879f9' : '#a855f7';
+                            ctx.shadowColor = '#d946ef';
+                            ctx.shadowBlur = 14;
+                            ctx.beginPath();
+                            ctx.arc(bx + perpX, by + perpY, ef.cellW * 0.11, 0, Math.PI * 2);
+                            ctx.fill();
+                        }
+                        ctx.restore();
+                    } else if (ef.kind === 'COUNTER_AURA') {
+                        const alpha = Math.max(0, 1 - ef.progress);
+                        ctx.save();
+                        ctx.globalAlpha = alpha;
+                        ctx.strokeStyle = '#fb7185';
+                        ctx.shadowColor = '#f43f5e';
+                        ctx.shadowBlur = 16;
+                        ctx.lineWidth = 4;
+                        const r = ef.cellW * (0.25 + ef.progress * 0.55);
+                        ctx.beginPath();
+                        ctx.arc(ef.x, ef.y, r, 0, Math.PI * 2);
+                        ctx.stroke();
+                        ctx.restore();
+                    } else if (ef.kind === 'COUNTER_BEAM') {
+                        const alpha = Math.max(0, 1 - ef.progress);
+                        ctx.save();
+                        ctx.globalAlpha = alpha;
+                        // 外周の紅蓮ビーム
+                        ctx.strokeStyle = '#f43f5e';
+                        ctx.shadowColor = '#fbbf24';
+                        ctx.shadowBlur = 24;
+                        ctx.lineWidth = ef.cellW * 0.34 * alpha;
+                        ctx.lineCap = 'round';
+                        ctx.beginPath();
+                        ctx.moveTo(ef.x1, ef.y1);
+                        ctx.lineTo(ef.x2, ef.y2);
+                        ctx.stroke();
+
+                        // 中心の黄金コアレーザー
+                        ctx.strokeStyle = '#fef08a';
+                        ctx.lineWidth = ef.cellW * 0.12 * alpha;
+                        ctx.beginPath();
+                        ctx.moveTo(ef.x1, ef.y1);
+                        ctx.lineTo(ef.x2, ef.y2);
+                        ctx.stroke();
+                        ctx.restore();
+                    } else if (ef.kind === 'LIGHTNING') {
+                        const alpha = Math.max(0, 1 - ef.progress);
+                        ctx.save();
+                        ctx.globalAlpha = alpha;
+                        ctx.strokeStyle = '#fef08a';
+                        ctx.shadowColor = '#eab308';
+                        ctx.shadowBlur = 22;
+                        ctx.lineWidth = Math.max(3, ef.cellW * 0.12);
+
+                        ctx.beginPath();
+                        let lx = ef.x + (Math.random() - 0.5) * 20;
+                        let ly = Math.max(0, ef.y - ef.cellW * 3.2);
+                        ctx.moveTo(lx, ly);
+                        const steps = 6;
+                        for (let s = 1; s <= steps; s++) {
+                            const ratio = s / steps;
+                            const nx = ef.x + (s === steps ? 0 : (Math.random() - 0.5) * ef.cellW * 0.55);
+                            const ny = ly + (ef.y - ly) * ratio;
+                            ctx.lineTo(nx, ny);
+                        }
+                        ctx.stroke();
+
+                        ctx.strokeStyle = '#38bdf8';
+                        ctx.lineWidth = 3;
+                        ctx.beginPath();
+                        ctx.arc(ef.x, ef.y, ef.cellW * (0.3 + ef.progress * 0.65), 0, Math.PI * 2);
+                        ctx.stroke();
+                        ctx.restore();
+                    } else if (ef.kind === 'RING_WAVE') {
+                        const alpha = Math.max(0, 1 - ef.progress);
+                        const r = ef.maxR * (0.2 + ef.progress * 0.8);
+                        ctx.save();
+                        ctx.globalAlpha = alpha;
+                        ctx.fillStyle = ef.fill;
+                        ctx.beginPath();
+                        ctx.arc(ef.x, ef.y, r, 0, Math.PI * 2);
+                        ctx.fill();
+
+                        ctx.strokeStyle = ef.color;
+                        ctx.lineWidth = 4;
+                        ctx.beginPath();
+                        ctx.arc(ef.x, ef.y, r, 0, Math.PI * 2);
+                        ctx.stroke();
+                        ctx.restore();
+                    } else if (ef.kind === 'CROSS_BLAST') {
+                        const alpha = Math.max(0, 1 - ef.progress);
+                        const len = ef.cellW * (1.35 * Math.min(1, ef.progress * 1.8));
+                        const thick = ef.cellW * 0.52 * alpha;
+                        ctx.save();
+                        ctx.globalAlpha = alpha;
+                        ctx.fillStyle = '#f97316';
+                        ctx.shadowColor = '#ef4444';
+                        ctx.shadowBlur = 20;
+                        ctx.fillRect(ef.x - len, ef.y - thick / 2, len * 2, thick);
+                        ctx.fillRect(ef.x - thick / 2, ef.y - len, thick, len * 2);
+                        ctx.restore();
+                    } else if (ef.kind === 'BEAM_TRAIL') {
+                        const alpha = Math.max(0, 1 - ef.progress);
+                        ctx.save();
+                        ctx.globalAlpha = alpha;
+                        ctx.strokeStyle = ef.color;
+                        ctx.shadowColor = ef.color;
+                        ctx.shadowBlur = 20;
+                        ctx.lineWidth = ef.cellW * 0.45 * alpha;
+                        ctx.lineCap = 'round';
+                        ctx.beginPath();
+                        ctx.moveTo(ef.from.x, ef.from.y);
+                        ctx.lineTo(ef.to.x, ef.to.y);
+                        ctx.stroke();
+                        ctx.restore();
+                    } else if (ef.kind === 'HEAL_AURA') {
+                        const alpha = Math.max(0, 1 - ef.progress);
+                        ctx.save();
+                        ctx.globalAlpha = alpha;
+                        ctx.strokeStyle = '#4ade80';
+                        ctx.lineWidth = 3.5;
+                        for (let rIdx = 0; rIdx < 2; rIdx++) {
+                            const radius = ef.cellW * (0.28 + ((ef.progress + rIdx * 0.3) % 1) * 0.55);
+                            ctx.beginPath();
+                            ctx.arc(ef.x, ef.y - ef.progress * 14, radius, 0, Math.PI * 2);
+                            ctx.stroke();
+                        }
+                        ctx.restore();
+                    } else if (ef.kind === 'SLASH') {
+                        const alpha = Math.max(0, 1 - ef.progress);
+                        const d = ef.cellW * 0.42;
+                        ctx.save();
+                        ctx.globalAlpha = alpha;
+                        ctx.strokeStyle = '#fff';
+                        ctx.shadowColor = '#f43f5e';
+                        ctx.shadowBlur = 14;
+                        ctx.lineWidth = 4;
+                        ctx.beginPath();
+                        ctx.moveTo(ef.x - d, ef.y - d);
+                        ctx.lineTo(ef.x + d, ef.y + d);
+                        ctx.moveTo(ef.x + d, ef.y - d);
+                        ctx.lineTo(ef.x - d, ef.y + d);
+                        ctx.stroke();
+                        ctx.restore();
+                    }
+
+                    if (ef.progress >= 1) {
+                        fxSystem.effects.splice(i, 1);
+                    }
+                }
+
+                for (let i = fxSystem.particles.length - 1; i >= 0; i--) {
+                    const pt = fxSystem.particles[i];
+                    pt.x += pt.vx;
+                    pt.y += pt.vy;
+                    pt.vx *= 0.94;
+                    pt.vy *= 0.94;
+                    pt.alpha -= pt.decay;
+                    if (pt.alpha <= 0) {
+                        fxSystem.particles.splice(i, 1);
+                        continue;
+                    }
+                    ctx.save();
+                    ctx.globalAlpha = pt.alpha;
+                    ctx.fillStyle = pt.color;
+                    ctx.beginPath();
+                    ctx.arc(pt.x, pt.y, pt.radius, 0, Math.PI * 2);
+                    ctx.fill();
+                    ctx.restore();
+                }
+
+                for (let i = fxSystem.popups.length - 1; i >= 0; i--) {
+                    const pop = fxSystem.popups[i];
+                    pop.y += pop.vy;
+                    pop.alpha -= 0.02;
+                    if (pop.alpha <= 0) {
+                        fxSystem.popups.splice(i, 1);
+                        continue;
+                    }
+                    ctx.save();
+                    ctx.globalAlpha = pop.alpha;
+                    ctx.font = '900 18px Inter, sans-serif';
+                    ctx.textAlign = 'center';
+                    ctx.lineWidth = 4;
+                    ctx.strokeStyle = '#090e1a';
+                    ctx.strokeText(pop.text, pop.x, pop.y);
+                    ctx.fillStyle = pop.color;
+                    ctx.fillText(pop.text, pop.x, pop.y);
+                    ctx.restore();
+                }
+            }
+            fxSystem.rafId = requestAnimationFrame(fxLoop);
+        }
+
+        // ============================================================================
+        // 3. 同一ブラウザ多窓同期（BroadcastChannel）＋ローカルルーム管理
+        // ============================================================================
+        const currentUserId = 'user-' + Math.random().toString(36).substring(2, 9);
+        let broadcastChannel = null;
+        const localRoomsStore = new Map();
+
+        function initBackend() {
+            try {
+                if (typeof BroadcastChannel !== 'undefined') {
+                    broadcastChannel = new BroadcastChannel('kanji_shogi_royale_channel_v4');
+                    broadcastChannel.onmessage = (ev) => handleBroadcastMessage(ev.data);
+                }
+            } catch (_) {
+                // ignore
+            }
+        }
+
+        function handleBroadcastMessage(msg) {
+            if (!msg || !msg.roomId) return;
+            if (msg.type === 'ROOM_UPDATE') {
+                localRoomsStore.set(msg.roomId, msg.room);
+                if (msg.roomId === appState.roomId) {
+                    appState.roomData = msg.room;
+                    appState.isHost = (msg.room.hostId === currentUserId);
+                    onStateUpdated();
+                }
+            } else if (msg.type === 'MEMBER_UPDATE' && msg.member) {
+                if (msg.roomId === appState.roomId) {
+                    appState.membersMap[msg.member.uid] = msg.member;
+                    onStateUpdated();
+                }
+            } else if (msg.type === 'MEMBER_LEAVE' && msg.uid) {
+                if (msg.roomId === appState.roomId) {
+                    delete appState.membersMap[msg.uid];
+                    onStateUpdated();
+                }
+            } else if (msg.type === 'QUERY_ROOM' && appState.roomId === msg.roomId && appState.isHost && appState.roomData) {
+                publishBroadcast({ type: 'ROOM_UPDATE', roomId: appState.roomId, room: appState.roomData });
+                Object.values(appState.membersMap).forEach(m => {
+                    publishBroadcast({ type: 'MEMBER_UPDATE', roomId: appState.roomId, member: m });
+                });
+            }
+        }
+
+        function publishBroadcast(payload) {
+            try {
+                if (broadcastChannel) broadcastChannel.postMessage(payload);
+            } catch (_) {
+                // ignore
+            }
+        }
+
+        // ============================================================================
+        // 4. ゲーム状態
+        // ============================================================================
+        const TURN_SECONDS = 15;
+
+        const appState = {
+            roomId: null,
+            isHost: false,
+            roomData: null,
+            membersMap: {},
+            timerInterval: null,
+            myPlottedAction: null,
+            actionMode: 'MOVE', // 'MOVE' | 'SKILL'
+            selectedPieceId: null,
+            spectatorSpeed: 1,
+            lastProcessedTurn: 0,
+            lastFxBatchId: 0,
+            lastChatTimestamps: {}
+        };
+
+        // ============================================================================
+        // 5. 移動・通常攻撃・固有スキルの合法手＆波及計算エンジン
+        // ============================================================================
+        function isInside(x, y, size) {
+            return x >= 0 && x < size && y >= 0 && y < size;
+        }
+
+        function getPieceAt(players, x, y) {
+            return players.find(p => p.alive && p.x === x && p.y === y) || null;
+        }
+
+        function computeMoveActions(piece, players, boardSize) {
+            const actions = [];
+            const type = piece.spec.moveType;
+
+            const addStep = (dx, dy) => {
+                const nx = piece.x + dx;
+                const ny = piece.y + dy;
+                if (!isInside(nx, ny, boardSize)) return;
+                const occ = getPieceAt(players, nx, ny);
+                if (!occ) {
+                    actions.push({ kind: 'MOVE', toX: nx, toY: ny, stopX: nx, stopY: ny, targetIds: [] });
+                } else if (occ.id !== piece.id) {
+                    actions.push({ kind: 'ATTACK', toX: nx, toY: ny, stopX: piece.x, stopY: piece.y, targetIds: [occ.id] });
+                }
+            };
+
+            const addSlide = (dx, dy, maxDist = boardSize) => {
+                for (let step = 1; step <= maxDist; step++) {
+                    const nx = piece.x + dx * step;
+                    const ny = piece.y + dy * step;
+                    if (!isInside(nx, ny, boardSize)) break;
+                    const occ = getPieceAt(players, nx, ny);
+                    if (!occ) {
+                        actions.push({ kind: 'MOVE', toX: nx, toY: ny, stopX: nx, stopY: ny, targetIds: [] });
+                    } else {
+                        const prevX = piece.x + dx * (step - 1);
+                        const prevY = piece.y + dy * (step - 1);
+                        actions.push({ kind: 'ATTACK', toX: nx, toY: ny, stopX: prevX, stopY: prevY, targetIds: [occ.id] });
+                        break;
+                    }
+                }
+            };
+
+            const addPierceSlide = (dx, dy) => {
+                const pathCells = [];
+                const hitIds = [];
+                let lastFreeX = piece.x;
+                let lastFreeY = piece.y;
+                let endX = piece.x;
+                let endY = piece.y;
+
+                for (let step = 1; step < boardSize; step++) {
+                    const nx = piece.x + dx * step;
+                    const ny = piece.y + dy * step;
+                    if (!isInside(nx, ny, boardSize)) break;
+                    endX = nx;
+                    endY = ny;
+                    pathCells.push({ x: nx, y: ny });
+                    const occ = getPieceAt(players, nx, ny);
+                    if (occ) {
+                        hitIds.push(occ.id);
+                    } else {
+                        lastFreeX = nx;
+                        lastFreeY = ny;
+                    }
+                }
+
+                if (pathCells.length > 0) {
+                    actions.push({
+                        kind: hitIds.length > 0 ? 'PIERCE' : 'MOVE',
+                        toX: endX,
+                        toY: endY,
+                        stopX: lastFreeX,
+                        stopY: lastFreeY,
+                        targetIds: hitIds,
+                        pathCells
+                    });
+                }
+            };
+
+            const ortho = [[1, 0], [-1, 0], [0, 1], [0, -1]];
+            const diag = [[1, 1], [1, -1], [-1, 1], [-1, -1]];
+            const all8 = [...ortho, ...diag];
+
+            switch (type) {
+                case 'ROOK_PIERCE':
+                    ortho.forEach(([dx, dy]) => addPierceSlide(dx, dy));
+                    break;
+                case 'ROOK':
+                    ortho.forEach(([dx, dy]) => addSlide(dx, dy));
+                    break;
+                case 'BISHOP':
+                    diag.forEach(([dx, dy]) => addSlide(dx, dy));
+                    break;
+                case 'DRAGON':
+                    ortho.forEach(([dx, dy]) => addSlide(dx, dy));
+                    diag.forEach(([dx, dy]) => addStep(dx, dy));
+                    break;
+                case 'HORSE':
+                    diag.forEach(([dx, dy]) => addSlide(dx, dy));
+                    ortho.forEach(([dx, dy]) => addStep(dx, dy));
+                    break;
+                case 'KING':
+                    all8.forEach(([dx, dy]) => addStep(dx, dy));
+                    break;
+                case 'CROSS_1':
+                    ortho.forEach(([dx, dy]) => addStep(dx, dy));
+                    break;
+                case 'GOLD':
+                    [[0, -1], [1, -1], [-1, -1], [1, 0], [-1, 0], [0, 1]].forEach(([dx, dy]) => addStep(dx, dy));
+                    break;
+                case 'SILVER':
+                    [[0, -1], [1, -1], [-1, -1], [1, 1], [-1, 1]].forEach(([dx, dy]) => addStep(dx, dy));
+                    break;
+                case 'NINJA':
+                    diag.forEach(([dx, dy]) => {
+                        addStep(dx, dy);
+                        addStep(dx * 2, dy * 2);
+                    });
+                    break;
+                case 'WIND_WARP':
+                    for (let dy = -2; dy <= 2; dy++) {
+                        for (let dx = -2; dx <= 2; dx++) {
+                            if (dx === 0 && dy === 0) continue;
+                            addStep(dx, dy);
+                        }
+                    }
+                    break;
+                default:
+                    all8.forEach(([dx, dy]) => addStep(dx, dy));
+            }
+            return actions;
+        }
+
+        function computeSkillActions(piece, players, boardSize) {
+            if (!piece.spec || !piece.spec.skill || (piece.skillCooldown || 0) > 0) {
+                return [];
+            }
+
+            const skId = piece.spec.skill.id;
+            const actions = [];
+            const ortho = [[1, 0], [-1, 0], [0, 1], [0, -1]];
+            const all8 = [...ortho, [1, 1], [1, -1], [-1, 1], [-1, -1]];
+
+            if (skId === 'FIREBALL_2') {
+                ortho.forEach(([dx, dy]) => {
+                    const c1x = piece.x + dx;
+                    const c1y = piece.y + dy;
+                    const c2x = piece.x + dx * 2;
+                    const c2y = piece.y + dy * 2;
+                    if (isInside(c2x, c2y, boardSize)) {
+                        const splashCells = [];
+                        if (isInside(c1x, c1y, boardSize)) splashCells.push({ x: c1x, y: c1y });
+                        splashCells.push({ x: c2x, y: c2y });
+                        actions.push({ kind: 'SKILL', skillId: skId, toX: c2x, toY: c2y, splashCells });
+                    } else if (isInside(c1x, c1y, boardSize)) {
+                        actions.push({ kind: 'SKILL', skillId: skId, toX: c1x, toY: c1y, splashCells: [{ x: c1x, y: c1y }] });
+                    }
+                });
+            } else if (skId === 'TUNA_SWEEP') {
+                if (boardSize > 1) {
+                    const rowCells = [];
+                    for (let x = 0; x < boardSize; x++) {
+                        if (x !== piece.x) rowCells.push({ x, y: piece.y });
+                    }
+                    if (rowCells.length > 0) {
+                        actions.push({ kind: 'SKILL', skillId: skId, toX: boardSize - 1, toY: piece.y, splashCells: rowCells });
+                        actions.push({ kind: 'SKILL', skillId: skId, toX: 0, toY: piece.y, splashCells: rowCells });
+                    }
+
+                    const colCells = [];
+                    for (let y = 0; y < boardSize; y++) {
+                        if (y !== piece.y) colCells.push({ x: piece.x, y });
+                    }
+                    if (colCells.length > 0) {
+                        actions.push({ kind: 'SKILL', skillId: skId, toX: piece.x, toY: boardSize - 1, splashCells: colCells });
+                        actions.push({ kind: 'SKILL', skillId: skId, toX: piece.x, toY: 0, splashCells: colCells });
+                    }
+                }
+            } else if (skId === 'LIGHTNING_STRIKE' || skId === 'SNIPE_SHOT') {
+                for (let y = 0; y < boardSize; y++) {
+                    for (let x = 0; x < boardSize; x++) {
+                        if (x === piece.x && y === piece.y) continue;
+                        const dist = Math.max(Math.abs(x - piece.x), Math.abs(y - piece.y));
+                        if (dist >= 2 && dist <= 3) {
+                            actions.push({ kind: 'SKILL', skillId: skId, toX: x, toY: y, splashCells: [{ x, y }] });
+                        }
+                    }
+                }
+            } else if (skId === 'FROST_NOVA') {
+                const splashCells = [];
+                all8.forEach(([dx, dy]) => {
+                    const nx = piece.x + dx;
+                    const ny = piece.y + dy;
+                    if (isInside(nx, ny, boardSize)) splashCells.push({ x: nx, y: ny });
+                });
+                if (splashCells.length > 0) {
+                    actions.push({ kind: 'SKILL', skillId: skId, toX: piece.x, toY: piece.y, splashCells });
+                }
+            } else if (skId === 'CROSS_BOMB') {
+                ortho.forEach(([dx, dy]) => {
+                    const tx = piece.x + dx * 2;
+                    const ty = piece.y + dy * 2;
+                    if (isInside(tx, ty, boardSize)) {
+                        const splashCells = [{ x: tx, y: ty }];
+                        ortho.forEach(([odx, ody]) => {
+                            const sx = tx + odx;
+                            const sy = ty + ody;
+                            if (isInside(sx, sy, boardSize)) splashCells.push({ x: sx, y: sy });
+                        });
+                        actions.push({ kind: 'SKILL', skillId: skId, toX: tx, toY: ty, splashCells });
+                    }
+                });
+            } else if (skId === 'GALE_BLAST') {
+                ortho.forEach(([dx, dy]) => {
+                    for (let step = 1; step <= 3; step++) {
+                        const nx = piece.x + dx * step;
+                        const ny = piece.y + dy * step;
+                        if (!isInside(nx, ny, boardSize)) break;
+                        actions.push({
+                            kind: 'SKILL',
+                            skillId: skId,
+                            toX: nx,
+                            toY: ny,
+                            dirX: dx,
+                            dirY: dy,
+                            splashCells: [{ x: nx, y: ny }]
+                        });
+                    }
+                });
+            } else if (skId === 'COPY_ABILITY') {
+                // 射程3マス以内の生存敵プレイヤーをターゲットにできる
+                players.forEach(other => {
+                    if (!other.alive || other.id === piece.id) return;
+                    const dist = Math.max(Math.abs(other.x - piece.x), Math.abs(other.y - piece.y));
+                    if (dist <= 3) {
+                        actions.push({
+                            kind: 'SKILL',
+                            skillId: skId,
+                            toX: other.x,
+                            toY: other.y,
+                            targetPlayerId: other.id,
+                            splashCells: [{ x: other.x, y: other.y }]
+                        });
+                    }
+                });
+            } else if (skId === 'COUNTER_STANCE' || skId === 'SELF_HEAL') {
+                actions.push({
+                    kind: 'SKILL',
+                    skillId: skId,
+                    toX: piece.x,
+                    toY: piece.y,
+                    splashCells: [{ x: piece.x, y: piece.y }]
+                });
+            }
+
+            return actions;
+        }
+
+        // ============================================================================
+        // 6. ルーム作成・参加・即時ソロ開始
+        // ============================================================================
+        function generateRoomId() {
+            return Math.floor(100000 + Math.random() * 900000).toString();
+        }
+
+        function showToast(msg, isError = true) {
+            const el = document.getElementById('lobby-toast');
+            el.textContent = msg;
+            el.className = isError
+                ? 'mt-4 p-3 rounded-xl bg-rose-950/85 border border-rose-500/50 text-rose-200 text-xs text-center font-semibold'
+                : 'mt-4 p-3 rounded-xl bg-emerald-950/85 border border-emerald-500/50 text-emerald-200 text-xs text-center font-semibold';
+            el.classList.remove('hidden');
+            setTimeout(() => el.classList.add('hidden'), 4000);
+        }
+
+        function createInitialPlayers(humans, bots, boardSize) {
+            const coords = [];
+            for (let y = 0; y < boardSize; y++) {
+                for (let x = 0; x < boardSize; x++) {
+                    coords.push({ x, y });
+                }
+            }
+            for (let i = coords.length - 1; i > 0; i--) {
+                const j = Math.floor(Math.random() * (i + 1));
+                [coords[i], coords[j]] = [coords[j], coords[i]];
+            }
+
+            const players = [];
+            let idx = 0;
+
+            humans.forEach(h => {
+                const spec = getKanjiSpec(h.kanji);
+                players.push({
+                    id: h.uid,
+                    name: h.name,
+                    kanji: spec.kanji,
+                    spec: spec,
+                    hp: spec.hp,
+                    maxHp: spec.hp,
+                    x: coords[idx].x,
+                    y: coords[idx].y,
+                    isHuman: true,
+                    alive: true,
+                    frozen: 0,
+                    counterActive: 0,
+                    copiedFrom: null,
+                    skillCooldown: 0,
+                    kills: 0
+                });
+                idx++;
+            });
+
+            bots.forEach(b => {
+                const spec = getKanjiSpec(b.kanji);
+                players.push({
+                    id: b.id,
+                    name: b.name,
+                    kanji: spec.kanji,
+                    spec: spec,
+                    hp: spec.hp,
+                    maxHp: spec.hp,
+                    x: coords[idx].x,
+                    y: coords[idx].y,
+                    isHuman: false,
+                    alive: true,
+                    frozen: 0,
+                    counterActive: 0,
+                    copiedFrom: null,
+                    skillCooldown: 0,
+                    kills: 0
+                });
+                idx++;
+            });
+
+            return players;
+        }
+
+        function startQuickSoloBattle() {
+            const name = document.getElementById('player-name-input').value.trim() || '挑戦者';
+            const kanji = (document.getElementById('kanji-input').value.trim() || '火').charAt(0);
+            const totalCount = parseInt(document.getElementById('quick-ai-count').value, 10) || 8;
+            const aiCount = Math.max(1, totalCount - 1);
+            const boardSize = getBoardSizeForPlayers(totalCount);
+
+            const roomId = generateRoomId();
+            const bots = [];
+            for (let i = 0; i < aiCount; i++) {
+                const rk = RANDOM_KANJI_LIST[Math.floor(Math.random() * RANDOM_KANJI_LIST.length)];
+                bots.push({
+                    id: 'ai-' + i + '-' + Math.random().toString(36).substring(2, 6),
+                    name: `CPU-${i + 1}`,
+                    kanji: rk
+                });
+            }
+
+            const meMember = {
+                uid: currentUserId,
+                name,
+                kanji,
+                ready: true,
+                plotTurn: 0,
+                plotAction: null,
+                chatMsg: '',
+                chatTs: 0,
+                joinedAt: Date.now()
+            };
+
+            const players = createInitialPlayers([meMember], bots, boardSize);
+            const roomObj = {
+                roomId,
+                hostId: currentUserId,
+                status: 'PLAYING',
+                turn: 1,
+                boardSize,
+                turnDeadline: Date.now() + TURN_SECONDS * 1000,
+                aiBots: bots,
+                players,
+                logs: [{ text: `⚔️ ${totalCount}人バトルロワイヤル（${boardSize}×${boardSize}盤）開戦！`, color: 'text-amber-300 font-bold' }],
+                winner: null,
+                lastDamagedIds: [],
+                fxBatchId: 0,
+                fxEvents: []
+            };
+
+            appState.roomId = roomId;
+            appState.isHost = true;
+            appState.myPlottedAction = null;
+            appState.actionMode = 'MOVE';
+            appState.selectedPieceId = currentUserId;
+            appState.membersMap = { [currentUserId]: meMember };
+            appState.roomData = roomObj;
+            localRoomsStore.set(roomId, roomObj);
+
+            document.getElementById('btn-leave-room').classList.remove('hidden');
+            onStateUpdated();
+        }
+
+        function createRoom() {
+            const name = document.getElementById('player-name-input').value.trim() || '部屋主';
+            const kanji = (document.getElementById('kanji-input').value.trim() || '火').charAt(0);
+            const roomId = generateRoomId();
+
+            const roomObj = {
+                roomId,
+                hostId: currentUserId,
+                status: 'WAITING',
+                turn: 0,
+                boardSize: 4,
+                turnDeadline: 0,
+                aiBots: [],
+                players: [],
+                logs: [],
+                winner: null,
+                lastDamagedIds: [],
+                fxBatchId: 0,
+                fxEvents: []
+            };
+
+            const meMember = {
+                uid: currentUserId,
+                name,
+                kanji,
+                ready: true,
+                plotTurn: 0,
+                plotAction: null,
+                chatMsg: '',
+                chatTs: 0,
+                joinedAt: Date.now()
+            };
+
+            appState.roomId = roomId;
+            appState.isHost = true;
+            appState.myPlottedAction = null;
+            appState.actionMode = 'MOVE';
+            appState.selectedPieceId = currentUserId;
+            appState.roomData = roomObj;
+            appState.membersMap = { [currentUserId]: meMember };
+            localRoomsStore.set(roomId, roomObj);
+
+            publishBroadcast({ type: 'ROOM_UPDATE', roomId, room: roomObj });
+            publishBroadcast({ type: 'MEMBER_UPDATE', roomId, member: meMember });
+
+            document.getElementById('btn-leave-room').classList.remove('hidden');
+            document.getElementById('display-room-id').textContent = roomId;
+            document.getElementById('waiting-kanji-input').value = kanji;
+            onStateUpdated();
+        }
+
+        function joinRoom() {
+            const rawId = document.getElementById('join-room-id-input').value.trim();
+            if (!rawId || rawId.length < 4) {
+                showToast('6桁のルームIDを入力してください。');
+                return;
+            }
+
+            const name = document.getElementById('player-name-input').value.trim() || '参戦者';
+            const kanji = (document.getElementById('kanji-input').value.trim() || '写').charAt(0);
+
+            const meMember = {
+                uid: currentUserId,
+                name,
+                kanji,
+                ready: false,
+                plotTurn: 0,
+                plotAction: null,
+                chatMsg: '',
+                chatTs: 0,
+                joinedAt: Date.now()
+            };
+
+            const cachedRoom = localRoomsStore.get(rawId);
+            appState.roomId = rawId;
+            appState.isHost = false;
+            appState.myPlottedAction = null;
+            appState.selectedPieceId = currentUserId;
+            appState.roomData = cachedRoom || {
+                roomId: rawId,
+                hostId: 'local-host',
+                status: 'WAITING',
+                turn: 0,
+                boardSize: 4,
+                turnDeadline: 0,
+                aiBots: [],
+                players: [],
+                logs: [],
+                winner: null,
+                lastDamagedIds: [],
+                fxBatchId: 0,
+                fxEvents: []
+            };
+            appState.membersMap[currentUserId] = meMember;
+            publishBroadcast({ type: 'MEMBER_UPDATE', roomId: rawId, member: meMember });
+            publishBroadcast({ type: 'QUERY_ROOM', roomId: rawId });
+
+            document.getElementById('btn-leave-room').classList.remove('hidden');
+            document.getElementById('display-room-id').textContent = rawId;
+            document.getElementById('waiting-kanji-input').value = kanji;
+            onStateUpdated();
+        }
+
+        function updateRoomState(partial) {
+            if (!appState.roomData) return;
+            const nextRoom = { ...appState.roomData, ...partial };
+            appState.roomData = nextRoom;
+            if (appState.roomId) {
+                localRoomsStore.set(appState.roomId, nextRoom);
+                publishBroadcast({ type: 'ROOM_UPDATE', roomId: appState.roomId, room: nextRoom });
+            }
+            onStateUpdated();
+        }
+
+        function updateMyMemberState(partial) {
+            const currentMe = appState.membersMap[currentUserId];
+            if (!currentMe) return;
+            const nextMe = { ...currentMe, ...partial };
+            appState.membersMap[currentUserId] = nextMe;
+            if (appState.roomId) {
+                publishBroadcast({ type: 'MEMBER_UPDATE', roomId: appState.roomId, member: nextMe });
+            }
+            onStateUpdated();
+        }
+
+        function leaveRoom() {
+            if (appState.roomId) {
+                publishBroadcast({ type: 'MEMBER_LEAVE', roomId: appState.roomId, uid: currentUserId });
+            }
+            resetToTitle();
+        }
+
+        function resetToTitle(msg = '') {
+            appState.roomId = null;
+            appState.roomData = null;
+            appState.membersMap = {};
+            appState.myPlottedAction = null;
+            appState.actionMode = 'MOVE';
+
+            document.getElementById('waiting-room-screen').classList.add('hidden');
+            document.getElementById('battle-screen').classList.add('hidden');
+            document.getElementById('result-modal').classList.add('hidden');
+            document.getElementById('btn-leave-room').classList.add('hidden');
+            document.getElementById('lobby-entry-screen').classList.remove('hidden');
+
+            if (msg) showToast(msg, true);
+        }
+
+        // ============================================================================
+        // 7. 待機室処理
+        // ============================================================================
+        function addAiBots(count) {
+            if (!appState.isHost || !appState.roomData) return;
+            const humansCount = Object.keys(appState.membersMap).length;
+            const bots = [...(appState.roomData.aiBots || [])];
+            const canAdd = Math.min(count, 30 - (humansCount + bots.length));
+            for (let i = 0; i < canAdd; i++) {
+                const rk = RANDOM_KANJI_LIST[Math.floor(Math.random() * RANDOM_KANJI_LIST.length)];
+                bots.push({
+                    id: 'ai-' + Date.now() + '-' + Math.random().toString(36).substring(2, 6),
+                    name: `CPU-${bots.length + 1}`,
+                    kanji: rk
+                });
+            }
+            updateRoomState({ aiBots: bots });
+        }
+
+        function clearAiBots() {
+            if (!appState.isHost || !appState.roomData) return;
+            updateRoomState({ aiBots: [] });
+        }
+
+        function hostStartFromWaiting() {
+            if (!appState.isHost || !appState.roomData) return;
+            const humans = Object.values(appState.membersMap);
+            let bots = [...(appState.roomData.aiBots || [])];
+            if (humans.length + bots.length < 2) {
+                for (let i = 0; i < 3; i++) {
+                    const rk = RANDOM_KANJI_LIST[Math.floor(Math.random() * RANDOM_KANJI_LIST.length)];
+                    bots.push({ id: 'ai-' + i + '-' + Date.now(), name: `CPU-${i + 1}`, kanji: rk });
+                }
+            }
+            const totalCount = humans.length + bots.length;
+            const boardSize = getBoardSizeForPlayers(totalCount);
+            const players = createInitialPlayers(humans, bots, boardSize);
+
+            appState.myPlottedAction = null;
+            appState.actionMode = 'MOVE';
+            appState.selectedPieceId = currentUserId;
+
+            updateRoomState({
+                status: 'PLAYING',
+                turn: 1,
+                boardSize,
+                turnDeadline: Date.now() + TURN_SECONDS * 1000,
+                aiBots: bots,
+                players,
+                logs: [{ text: `⚔️ ${totalCount}人バトルロワイヤル（${boardSize}×${boardSize}盤）開戦！`, color: 'text-amber-300 font-bold' }],
+                winner: null,
+                lastDamagedIds: [],
+                fxBatchId: 0,
+                fxEvents: []
+            });
+        }
+
+        function renderWaitingRoom() {
+            const room = appState.roomData;
+            if (!room) return;
+            const humans = Object.values(appState.membersMap).sort((a, b) => (a.joinedAt || 0) - (b.joinedAt || 0));
+            const bots = room.aiBots || [];
+            const total = humans.length + bots.length;
+            const bSize = getBoardSizeForPlayers(total);
+
+            document.getElementById('waiting-player-count').innerHTML = `${total}<span class="text-xs font-normal text-slate-400"> / 30人</span>`;
+            document.getElementById('waiting-board-size').textContent = `${bSize} × ${bSize} マス`;
+
+            if (appState.isHost) {
+                document.getElementById('host-controls').classList.remove('hidden');
+                document.getElementById('guest-waiting-msg').classList.add('hidden');
+            } else {
+                document.getElementById('host-controls').classList.add('hidden');
+                document.getElementById('guest-waiting-msg').classList.remove('hidden');
+            }
+
+            const me = appState.membersMap[currentUserId];
+            const btnReady = document.getElementById('btn-toggle-ready');
+            if (me && me.ready) {
+                btnReady.textContent = '✅ 準備完了';
+                btnReady.className = 'px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold shadow transition';
+            } else {
+                btnReady.textContent = '⏳ 準備中にする';
+                btnReady.className = 'px-4 py-2 rounded-lg bg-slate-700 hover:bg-slate-600 text-slate-200 text-xs font-bold transition';
+            }
+
+            const grid = document.getElementById('waiting-players-grid');
+            grid.innerHTML = '';
+
+            humans.forEach(h => {
+                const sp = getKanjiSpec(h.kanji);
+                const card = document.createElement('div');
+                card.className = `p-2.5 rounded-xl border flex items-center gap-2.5 ${
+                    h.uid === currentUserId ? 'bg-amber-500/15 border-amber-500/50' : 'bg-slate-950/80 border-slate-800'
+                }`;
+                card.innerHTML = `
+                    <div class="w-9 h-10 shrink-0 bg-gradient-to-b from-amber-300 to-amber-500 text-slate-950 font-shogi font-black text-lg flex items-center justify-center" style="clip-path: polygon(50% 4%, 92% 20%, 100% 98%, 0% 98%, 8% 20%);">
+                        ${h.kanji}
+                    </div>
+                    <div class="min-w-0 flex-1">
+                        <div class="text-xs font-bold text-white truncate">${h.uid === room.hostId ? '👑 ' : ''}${h.name}</div>
+                        <div class="text-[10px] text-slate-400 truncate">HP${sp.hp} / ⚡${sp.skill.name}</div>
+                        <div class="text-[10px] font-bold mt-0.5 ${h.ready ? 'text-emerald-400' : 'text-slate-500'}">${h.ready ? '● 準備OK' : '○ 待機中'}</div>
+                    </div>
+                `;
+                grid.appendChild(card);
+            });
+
+            bots.forEach(b => {
+                const sp = getKanjiSpec(b.kanji);
+                const card = document.createElement('div');
+                card.className = 'p-2.5 rounded-xl border bg-slate-950/50 border-slate-800/80 flex items-center gap-2.5';
+                card.innerHTML = `
+                    <div class="w-9 h-10 shrink-0 bg-gradient-to-b from-amber-200 to-amber-600/80 text-slate-950 font-shogi font-black text-lg flex items-center justify-center" style="clip-path: polygon(50% 4%, 92% 20%, 100% 98%, 0% 98%, 8% 20%);">
+                        ${b.kanji}
+                    </div>
+                    <div class="min-w-0 flex-1">
+                        <div class="text-xs font-bold text-slate-300 truncate"><span class="px-1 rounded bg-slate-800 text-slate-400 text-[9px] mr-1">AI</span>${b.name}</div>
+                        <div class="text-[10px] text-slate-500 truncate">HP${sp.hp} / ⚡${sp.skill.name}</div>
+                        <div class="text-[10px] font-bold text-sky-400/80 mt-0.5">● 参戦待機</div>
+                    </div>
+                `;
+                grid.appendChild(card);
+            });
+        }
+
+        // ============================================================================
+        // 8. ターン進行・行動解決エンジン（能力コピー＆カウンター反撃処理含む）
+        // ============================================================================
+        function chooseAiAction(ai, players, boardSize) {
+            const skillActs = computeSkillActions(ai, players, boardSize);
+            if (skillActs.length > 0 && Math.random() < 0.5) {
+                const validSkills = skillActs.filter(sa => {
+                    if (sa.skillId === 'SELF_HEAL') return ai.hp < ai.maxHp;
+                    if (sa.skillId === 'COUNTER_STANCE') return (ai.counterActive || 0) <= 0;
+                    if (sa.skillId === 'COPY_ABILITY') {
+                        const t = players.find(p => p.id === sa.targetPlayerId);
+                        return t && t.spec.skill.id !== 'COPY_ABILITY';
+                    }
+                    return (sa.splashCells || []).some(c => {
+                        const occ = getPieceAt(players, c.x, c.y);
+                        return occ && occ.id !== ai.id;
+                    });
+                });
+                if (validSkills.length > 0) {
+                    return validSkills[Math.floor(Math.random() * validSkills.length)];
+                }
+            }
+
+            const moveActs = computeMoveActions(ai, players, boardSize);
+            if (moveActs.length === 0) return { kind: 'WAIT' };
+
+            let bestScore = -9999;
+            let bestList = [];
+            moveActs.forEach(act => {
+                let score = Math.random() * 10;
+                if (act.kind === 'ATTACK' || act.kind === 'PIERCE') {
+                    score += act.targetIds.length * 70;
+                    act.targetIds.forEach(tid => {
+                        const t = players.find(p => p.id === tid);
+                        if (t) {
+                            if (t.hp === 1) score += 90;
+                            if ((t.counterActive || 0) > 0) score -= 120; // カウンター構え中の相手はAIも警戒
+                        }
+                    });
+                }
+                if (score > bestScore) {
+                    bestScore = score;
+                    bestList = [act];
+                } else if (Math.abs(score - bestScore) < 0.01) {
+                    bestList.push(act);
+                }
+            });
+            return bestList[Math.floor(Math.random() * bestList.length)];
+        }
+
+        /**
+         * ダメージ適用とカウンター判定を共通化したヘルパー
+         * 対象がカウンター構え中（counterActive > 0）なら被弾を無効化し、攻撃者へ1ダメージの反撃ビームを放つ
+         */
+        function applyHitWithCounterCheck(attacker, target, damagedIds, fxEvents, pushLog) {
+            if (!target || !target.alive || target.id === attacker.id) return { countered: false, defeated: false };
+
+            if ((target.counterActive || 0) > 0) {
+                target.counterActive = 0; // 反撃発動で構えを消費
+                attacker.hp -= 1;
+                damagedIds.add(attacker.id);
+
+                const hitCoords = [{ x: attacker.x, y: attacker.y }];
+                fxEvents.push({
+                    type: 'COUNTER_BEAM',
+                    fromX: target.x,
+                    fromY: target.y,
+                    toX: attacker.x,
+                    toY: attacker.y,
+                    hitCoords
+                });
+
+                if (attacker.hp <= 0) {
+                    attacker.hp = 0;
+                    attacker.alive = false;
+                    target.kills += 1;
+                    pushLog(`🛡️ カウンター反撃撃破！ 【${target.kanji}】${target.name} が 【${attacker.kanji}】${attacker.name} の攻撃を無効化し反撃ビームで撃破！`, 'text-rose-400 font-bold');
+                } else {
+                    pushLog(`🛡️ カウンター反撃！ 【${target.kanji}】${target.name} が攻撃を無効化し 【${attacker.kanji}】${attacker.name} に1ダメ反撃 (残${attacker.hp})`, 'text-amber-300 font-bold');
+                }
+                return { countered: true, defeated: false };
+            }
+
+            target.hp -= 1;
+            damagedIds.add(target.id);
+            if (target.hp <= 0) {
+                target.hp = 0;
+                target.alive = false;
+                attacker.kills += 1;
+                return { countered: false, defeated: true };
+            }
+            return { countered: false, defeated: false };
+        }
+
+        let isResolvingTurn = false;
+        function resolveCurrentTurn() {
+            const room = appState.roomData;
+            if (!room || room.status !== 'PLAYING' || isResolvingTurn) return;
+            isResolvingTurn = true;
+
+            try {
+                const currentTurn = room.turn;
+                const boardSize = room.boardSize;
+                const players = JSON.parse(JSON.stringify(room.players));
+                const newLogs = [...(room.logs || [])];
+                const damagedIds = new Set();
+                const fxEvents = [];
+
+                const pushLog = (text, color = 'text-slate-300') => {
+                    newLogs.unshift({ text, color });
+                    if (newLogs.length > 80) newLogs.pop();
+                };
+
+                pushLog(`--- 第 ${currentTurn} ターン 解決 ---`, 'text-slate-500 text-[11px]');
+
+                // ターン開始時のクールタイム減少＆カウンター持続減少（発動ターン＋次ターン終了時まで維持）
+                players.forEach(p => {
+                    if (!p.alive) return;
+                    if ((p.skillCooldown || 0) > 0) p.skillCooldown -= 1;
+                    if ((p.counterActive || 0) > 0) p.counterActive -= 1;
+                });
+
+                const aliveActors = players.filter(p => p.alive);
+                aliveActors.sort((a, b) => {
+                    const aFast = a.spec.moveType === 'ROOK_PIERCE' ? 1 : 0;
+                    const bFast = b.spec.moveType === 'ROOK_PIERCE' ? 1 : 0;
+                    if (aFast !== bFast) return bFast - aFast;
+                    return Math.random() - 0.5;
+                });
+
+                for (const actor of aliveActors) {
+                    if (!actor.alive) continue;
+
+                    if (actor.frozen > 0) {
+                        actor.frozen -= 1;
+                        pushLog(`❄️ 【${actor.kanji}】${actor.name} は凍りついて動けない！`, 'text-sky-300');
+                        continue;
+                    }
+
+                    let action = null;
+                    if (actor.id === currentUserId && appState.myPlottedAction) {
+                        action = appState.myPlottedAction;
+                    } else if (actor.isHuman) {
+                        const mem = appState.membersMap[actor.id];
+                        if (mem && mem.plotTurn === currentTurn && mem.plotAction) {
+                            action = mem.plotAction;
+                        } else {
+                            action = chooseAiAction(actor, players, boardSize);
+                        }
+                    } else {
+                        action = chooseAiAction(actor, players, boardSize);
+                    }
+
+                    if (!action || action.kind === 'WAIT') continue;
+
+                    const startX = actor.x;
+                    const startY = actor.y;
+
+                    if (action.kind === 'MOVE') {
+                        const occ = getPieceAt(players, action.toX, action.toY);
+                        if (!occ) {
+                            actor.x = action.toX;
+                            actor.y = action.toY;
+                        } else if (occ.id !== actor.id) {
+                            const res = applyHitWithCounterCheck(actor, occ, damagedIds, fxEvents, pushLog);
+                            if (!res.countered) {
+                                fxEvents.push({
+                                    type: 'SLASH',
+                                    fromX: startX,
+                                    fromY: startY,
+                                    toX: occ.x,
+                                    toY: occ.y,
+                                    hitCoords: [{ x: occ.x, y: occ.y }]
+                                });
+                                if (res.defeated) {
+                                    actor.x = action.toX;
+                                    actor.y = action.toY;
+                                    pushLog(`💥 衝突撃破！ 【${actor.kanji}】${actor.name} が 【${occ.kanji}】${occ.name} を撃破！`, 'text-amber-300 font-bold');
+                                } else {
+                                    pushLog(`⚔️ 衝突！ 【${actor.kanji}】${actor.name} → 【${occ.kanji}】${occ.name} に1ダメ (残${occ.hp})`, 'text-slate-200');
+                                }
+                            }
+                        }
+                    } else if (action.kind === 'ATTACK') {
+                        const target = getPieceAt(players, action.toX, action.toY);
+                        if (target && target.id !== actor.id) {
+                            const res = applyHitWithCounterCheck(actor, target, damagedIds, fxEvents, pushLog);
+                            if (!res.countered) {
+                                fxEvents.push({
+                                    type: 'SLASH',
+                                    fromX: startX,
+                                    fromY: startY,
+                                    toX: target.x,
+                                    toY: target.y,
+                                    hitCoords: [{ x: target.x, y: target.y }]
+                                });
+                                if (res.defeated) {
+                                    actor.x = action.toX;
+                                    actor.y = action.toY;
+                                    pushLog(`💥 【${actor.kanji}】${actor.name} が 【${target.kanji}】${target.name} を撃破！`, 'text-rose-400 font-bold');
+                                } else {
+                                    if (!getPieceAt(players, action.stopX, action.stopY)) {
+                                        actor.x = action.stopX;
+                                        actor.y = action.stopY;
+                                    }
+                                    pushLog(`⚔️ 【${actor.kanji}】${actor.name} → 【${target.kanji}】${target.name} に1ダメ (残${target.hp})`, 'text-slate-200');
+                                }
+                            }
+                        } else if (!target) {
+                            actor.x = action.toX;
+                            actor.y = action.toY;
+                        }
+                    } else if (action.kind === 'PIERCE') {
+                        const path = action.pathCells || [];
+                        const hitNotes = [];
+                        const hitCoords = [];
+                        let lastFreeX = actor.x;
+                        let lastFreeY = actor.y;
+                        let interruptedByCounter = false;
+
+                        for (const c of path) {
+                            if (!actor.alive || interruptedByCounter) break;
+                            const occ = getPieceAt(players, c.x, c.y);
+                            if (occ && occ.id !== actor.id) {
+                                const res = applyHitWithCounterCheck(actor, occ, damagedIds, fxEvents, pushLog);
+                                if (res.countered) {
+                                    interruptedByCounter = true;
+                                    break;
+                                }
+                                hitCoords.push({ x: c.x, y: c.y });
+                                if (res.defeated) {
+                                    hitNotes.push(`【${occ.kanji}】(撃破!)`);
+                                    lastFreeX = c.x;
+                                    lastFreeY = c.y;
+                                } else {
+                                    hitNotes.push(`【${occ.kanji}】(残${occ.hp})`);
+                                }
+                            } else if (!occ) {
+                                lastFreeX = c.x;
+                                lastFreeY = c.y;
+                            }
+                        }
+                        if (actor.alive) {
+                            actor.x = lastFreeX;
+                            actor.y = lastFreeY;
+                        }
+                        fxEvents.push({
+                            type: 'PIERCE',
+                            fromX: startX,
+                            fromY: startY,
+                            toX: lastFreeX,
+                            toY: lastFreeY,
+                            pathCells: path,
+                            hitCoords
+                        });
+                        if (hitNotes.length > 0) {
+                            pushLog(`🐟 貫通突進！ 【${actor.kanji}】${actor.name} → ${hitNotes.join('・')} に1ダメ！`, 'text-orange-300 font-bold');
+                        }
+                    } else if (action.kind === 'SKILL') {
+                        const sk = actor.spec.skill;
+                        actor.skillCooldown = sk.cd || 1;
+
+                        if (action.skillId === 'SELF_HEAL') {
+                            const beforeHp = actor.hp;
+                            actor.hp = Math.min(actor.maxHp, actor.hp + 1);
+                            fxEvents.push({
+                                type: 'SELF_HEAL',
+                                fromX: startX,
+                                fromY: startY,
+                                toX: startX,
+                                toY: startY,
+                                healCoord: { x: startX, y: startY }
+                            });
+                            pushLog(`💚 スキル「${sk.name}」！ 【${actor.kanji}】${actor.name} のHPが ${beforeHp} → ${actor.hp} に回復！`, 'text-emerald-300 font-bold');
+                        } else if (action.skillId === 'COUNTER_STANCE') {
+                            // 発動ターン中＋次ターン終了時まで持続するため 2 をセット
+                            actor.counterActive = 2;
+                            fxEvents.push({
+                                type: 'COUNTER_STANCE',
+                                fromX: startX,
+                                fromY: startY,
+                                toX: startX,
+                                toY: startY
+                            });
+                            pushLog(`🛡️ スキル「${sk.name}」！ 【${actor.kanji}】${actor.name} が反撃態勢に入った！`, 'text-rose-300 font-bold');
+                        } else if (action.skillId === 'COPY_ABILITY') {
+                            const target = players.find(p => p.id === action.targetPlayerId && p.alive) || getPieceAt(players, action.toX, action.toY);
+                            if (target && target.id !== actor.id) {
+                                const copiedSpec = JSON.parse(JSON.stringify(target.spec));
+                                actor.spec = {
+                                    ...copiedSpec,
+                                    name: `${copiedSpec.name}（${target.kanji}コピー）`
+                                };
+                                actor.copiedFrom = target.kanji;
+                                actor.skillCooldown = 1;
+                                fxEvents.push({
+                                    type: 'COPY_ABILITY',
+                                    fromX: startX,
+                                    fromY: startY,
+                                    toX: target.x,
+                                    toY: target.y,
+                                    copiedKanji: target.kanji
+                                });
+                                pushLog(`🪞 能力コピー発動！ 【${actor.kanji}】${actor.name} が 【${target.kanji}】${target.name} の「${copiedSpec.moveTag}」＆「${copiedSpec.skill.name}」を奪取！`, 'text-fuchsia-300 font-bold');
+                            } else {
+                                pushLog(`🪞 【${actor.kanji}】${actor.name} の能力コピーは対象がいなかった…`, 'text-slate-400');
+                            }
+                        } else {
+                            const hits = [];
+                            const hitCoords = [];
+                            const cells = action.splashCells || [];
+                            for (const c of cells) {
+                                if (!actor.alive) break;
+                                const occ = getPieceAt(players, c.x, c.y);
+                                if (occ && occ.id !== actor.id) {
+                                    const res = applyHitWithCounterCheck(actor, occ, damagedIds, fxEvents, pushLog);
+                                    if (res.countered) continue;
+
+                                    hitCoords.push({ x: c.x, y: c.y });
+
+                                    if (action.skillId === 'FROST_NOVA' && occ.hp > 0) {
+                                        occ.frozen = 1;
+                                    }
+
+                                    if (action.skillId === 'GALE_BLAST' && occ.hp > 0) {
+                                        const pushX = occ.x + (action.dirX || 0);
+                                        const pushY = occ.y + (action.dirY || 0);
+                                        if (isInside(pushX, pushY, boardSize) && !getPieceAt(players, pushX, pushY)) {
+                                            occ.x = pushX;
+                                            occ.y = pushY;
+                                        }
+                                    }
+
+                                    if (res.defeated) {
+                                        hits.push(`【${occ.kanji}】(撃破!)`);
+                                    } else {
+                                        hits.push(`【${occ.kanji}】(残${occ.hp})`);
+                                    }
+                                }
+                            }
+
+                            fxEvents.push({
+                                type: action.skillId,
+                                fromX: startX,
+                                fromY: startY,
+                                toX: action.toX,
+                                toY: action.toY,
+                                pathCells: cells,
+                                hitCoords
+                            });
+
+                            if (hits.length > 0) {
+                                pushLog(`⚡ スキル「${sk.name}」！ 【${actor.kanji}】${actor.name} → ${hits.join('・')} に1ダメ！`, 'text-purple-300 font-bold');
+                            } else {
+                                pushLog(`⚡ 【${actor.kanji}】${actor.name} がスキル「${sk.name}」を発動！`, 'text-purple-400/85');
+                            }
+                        }
+                    }
+                }
+
+                const survivors = players.filter(p => p.alive);
+                appState.myPlottedAction = null;
+                appState.actionMode = 'MOVE';
+                const nextFxBatchId = (room.fxBatchId || 0) + 1;
+
+                if (survivors.length <= 1) {
+                    const winner = survivors[0] || null;
+                    if (winner) {
+                        pushLog(`👑 決着！ ${winner.name}【${winner.kanji}】が最後の1駒として優勝！`, 'text-amber-300 font-bold');
+                    } else {
+                        pushLog(`⚔️ 全員相打ち・引き分け！`, 'text-amber-300 font-bold');
+                    }
+                    updateRoomState({
+                        status: 'FINISHED',
+                        players,
+                        logs: newLogs,
+                        winner,
+                        lastDamagedIds: Array.from(damagedIds),
+                        fxBatchId: nextFxBatchId,
+                        fxEvents
+                    });
+                } else {
+                    updateRoomState({
+                        turn: currentTurn + 1,
+                        turnDeadline: Date.now() + TURN_SECONDS * 1000,
+                        players,
+                        logs: newLogs,
+                        lastDamagedIds: Array.from(damagedIds),
+                        fxBatchId: nextFxBatchId,
+                        fxEvents
+                    });
+                }
+            } finally {
+                isResolvingTurn = false;
+            }
+        }
+
+        // ============================================================================
+        // 9. バトル画面レンダリング＆エフェクト再生トリガー
+        // ============================================================================
+        function onStateUpdated() {
+            const room = appState.roomData;
+            if (!room) return;
+
+            Object.values(appState.membersMap).forEach(m => {
+                if (m.chatTs && m.chatMsg && appState.lastChatTimestamps[m.uid] !== m.chatTs) {
+                    appState.lastChatTimestamps[m.uid] = m.chatTs;
+                    if (room.status === 'PLAYING' || room.status === 'FINISHED') {
+                        spawnStamp(m.name, m.chatMsg);
+                    }
+                }
+            });
+
+            if (room.status === 'WAITING') {
+                document.getElementById('lobby-entry-screen').classList.add('hidden');
+                document.getElementById('battle-screen').classList.add('hidden');
+                document.getElementById('result-modal').classList.add('hidden');
+                document.getElementById('waiting-room-screen').classList.remove('hidden');
+                appState.lastProcessedTurn = 0;
+                appState.lastFxBatchId = 0;
+                renderWaitingRoom();
+            } else if (room.status === 'PLAYING' || room.status === 'FINISHED') {
+                document.getElementById('lobby-entry-screen').classList.add('hidden');
+                document.getElementById('waiting-room-screen').classList.add('hidden');
+                document.getElementById('battle-screen').classList.remove('hidden');
+
+                if (appState.lastProcessedTurn !== room.turn) {
+                    appState.lastProcessedTurn = room.turn;
+                    appState.myPlottedAction = null;
+                    appState.actionMode = 'MOVE';
+                }
+
+                renderBattle();
+
+                if (room.fxBatchId && room.fxBatchId !== appState.lastFxBatchId) {
+                    appState.lastFxBatchId = room.fxBatchId;
+                    const evs = room.fxEvents || [];
+                    evs.forEach((ev, idx) => {
+                        setTimeout(() => {
+                            playVisualEffect(ev, room.boardSize || 5);
+                        }, idx * 80);
+                    });
+                }
+
+                if (room.status === 'FINISHED') {
+                    setTimeout(() => showResultModal(room), 650);
+                }
+            }
+        }
+
+        function renderBattle() {
+            const room = appState.roomData;
+            if (!room) return;
+
+            const players = room.players || [];
+            const boardSize = room.boardSize || 5;
+            const alivePlayers = players.filter(p => p.alive);
+            const me = players.find(p => p.id === currentUserId);
+
+            document.getElementById('battle-turn-badge').textContent = `第 ${room.turn} ターン`;
+            document.getElementById('battle-room-tag').textContent = `ID: ${room.roomId}`;
+            document.getElementById('battle-alive-count').textContent = alivePlayers.length;
+            document.getElementById('battle-total-count').textContent = players.length;
+            document.getElementById('battle-board-dim').textContent = `${boardSize} × ${boardSize}`;
+            document.getElementById('battle-survivor-ratio').textContent = `${alivePlayers.length}/${players.length}`;
+
+            const aliveHumans = players.filter(p => p.alive && p.isHuman);
+            const plottedCount = aliveHumans.filter(h => {
+                if (h.id === currentUserId && appState.myPlottedAction) return true;
+                const m = appState.membersMap[h.id];
+                return m && m.plotTurn === room.turn && m.plotAction;
+            }).length;
+            document.getElementById('plotted-progress-text').textContent = `予約: ${plottedCount} / ${aliveHumans.length} 人`;
+
+            const btnMove = document.getElementById('btn-mode-move');
+            const btnSkill = document.getElementById('btn-mode-skill');
+            const guideBanner = document.getElementById('battle-guide-banner');
+            const execLabel = document.getElementById('btn-execute-turn-label');
+
+            execLabel.textContent = room.status === 'FINISHED' ? '対局終了（結果を見る）' : '行動確定 / ターン進行';
+
+            if (me) {
+                document.getElementById('my-battle-piece').textContent = me.kanji;
+                document.getElementById('my-battle-title').textContent = `${me.kanji}（${me.spec.name}）`;
+                document.getElementById('my-battle-desc').textContent = me.spec.desc;
+                const hearts = '♥ '.repeat(me.hp) + '♡ '.repeat(Math.max(0, me.maxHp - me.hp));
+                document.getElementById('my-battle-hp').textContent = `${hearts.trim()} (${me.hp}/${me.maxHp})`;
+
+                // コピー中・カウンター中の状態バッジ表示
+                const buffBox = document.getElementById('my-buff-badges');
+                buffBox.innerHTML = '';
+                if (me.copiedFrom) {
+                    buffBox.innerHTML += `<span class="px-2 py-0.5 rounded bg-fuchsia-500/20 border border-fuchsia-500/40 text-fuchsia-300 text-[10px] font-bold">🪞 「${me.copiedFrom}」の能力コピー中</span>`;
+                }
+                if ((me.counterActive || 0) > 0) {
+                    buffBox.innerHTML += `<span class="px-2 py-0.5 rounded bg-rose-500/20 border border-rose-500/50 text-rose-300 text-[10px] font-bold">🛡️ カウンター反撃態勢中</span>`;
+                }
+
+                const sk = me.spec.skill;
+                const cd = me.skillCooldown || 0;
+                const cdText = cd > 0 ? `【クールタイム中: 残り${cd}T】` : `【使用可能 / CT ${sk.cd}T】`;
+                document.getElementById('my-skill-summary').textContent = `⚡ ${sk.name} ${cdText}：${sk.tag}`;
+                document.getElementById('btn-skill-label').textContent = cd > 0 ? `${sk.name} (CT:${cd}T)` : `${sk.name}`;
+
+                const statusEl = document.getElementById('my-battle-status');
+                if (!me.alive) {
+                    statusEl.textContent = '💀 脱落（観戦中）';
+                    statusEl.className = 'text-xs font-bold text-rose-400';
+                    document.getElementById('btn-plot-wait').classList.add('hidden');
+                    document.getElementById('action-mode-bar').classList.add('hidden');
+                    document.getElementById('spectator-banner-card').classList.remove('hidden');
+                    guideBanner.className = 'w-full max-w-[580px] mb-2 px-4 py-2 rounded-xl bg-indigo-500/20 border border-indigo-500/50 text-center text-xs sm:text-sm font-bold text-indigo-200';
+                    guideBanner.textContent = '👁️ 観戦モード中：最後の1人が決まるまでバトルを観戦中！';
+                } else {
+                    document.getElementById('spectator-banner-card').classList.add('hidden');
+                    document.getElementById('btn-plot-wait').classList.remove('hidden');
+                    document.getElementById('action-mode-bar').classList.remove('hidden');
+
+                    if (cd > 0 || me.frozen > 0) {
+                        btnSkill.disabled = true;
+                        btnSkill.className = 'py-2.5 px-3 rounded-xl bg-slate-900 text-slate-500 font-bold text-xs sm:text-sm border border-slate-800 cursor-not-allowed flex items-center justify-center gap-1.5';
+                        if (appState.actionMode === 'SKILL') appState.actionMode = 'MOVE';
+                    } else {
+                        btnSkill.disabled = false;
+                        if (appState.actionMode === 'SKILL') {
+                            btnSkill.className = 'py-2.5 px-3 rounded-xl bg-purple-600 text-white font-black text-xs sm:text-sm shadow-lg shadow-purple-500/30 border border-purple-300 transition flex items-center justify-center gap-1.5';
+                        } else {
+                            btnSkill.className = 'py-2.5 px-3 rounded-xl bg-slate-800 hover:bg-purple-950/60 text-purple-200 font-black text-xs sm:text-sm border border-purple-500/40 transition flex items-center justify-center gap-1.5';
+                        }
+                    }
+
+                    if (appState.actionMode === 'MOVE') {
+                        btnMove.className = 'py-2.5 px-3 rounded-xl bg-sky-500 text-slate-950 font-black text-xs sm:text-sm shadow-lg shadow-sky-500/25 border border-sky-300 transition flex items-center justify-center gap-1.5';
+                    } else {
+                        btnMove.className = 'py-2.5 px-3 rounded-xl bg-slate-800 hover:bg-sky-950/60 text-sky-200 font-black text-xs sm:text-sm border border-sky-500/40 transition flex items-center justify-center gap-1.5';
+                    }
+
+                    if (me.frozen > 0) {
+                        statusEl.textContent = '❄️ 凍結中';
+                        statusEl.className = 'text-xs font-bold text-sky-400';
+                        guideBanner.className = 'w-full max-w-[580px] mb-2 px-4 py-2 rounded-xl bg-sky-500/20 border border-sky-500/50 text-center text-xs sm:text-sm font-bold text-sky-200';
+                        guideBanner.textContent = '❄️ 凍結中のためこのターンは動けません。「行動確定 / ターン進行」を押してください！';
+                    } else if (appState.myPlottedAction) {
+                        statusEl.textContent = '✅ 予約完了';
+                        statusEl.className = 'text-xs font-bold text-emerald-400';
+                        const actDesc = appState.myPlottedAction.kind === 'WAIT'
+                            ? 'その場で待機'
+                            : appState.myPlottedAction.kind === 'SKILL'
+                                ? `スキル「${sk.name}」発動`
+                                : `(${appState.myPlottedAction.toX + 1}, ${appState.myPlottedAction.toY + 1}) へ行動`;
+                        guideBanner.className = 'w-full max-w-[580px] mb-2 px-4 py-2 rounded-xl bg-emerald-500/20 border border-emerald-500/50 text-center text-xs sm:text-sm font-bold text-emerald-200';
+                        guideBanner.textContent = `✅ 「${actDesc}」を予約済み！「行動確定 / ターン進行」ですぐ実行できます`;
+                    } else {
+                        statusEl.textContent = appState.actionMode === 'SKILL' ? '⚡ スキル選択中' : '🏃 移動選択中';
+                        statusEl.className = appState.actionMode === 'SKILL' ? 'text-xs font-bold text-purple-300' : 'text-xs font-bold text-sky-300';
+                        guideBanner.className = 'w-full max-w-[580px] mb-2 px-4 py-2 rounded-xl bg-amber-500/20 border border-amber-500/50 text-center text-xs sm:text-sm font-bold text-amber-200';
+                        guideBanner.textContent = appState.actionMode === 'SKILL'
+                            ? `⚡ 「${sk.name}」の紫のターゲットマスをタップして予約してください！`
+                            : '青（移動）または赤（攻撃・1ダメ）のマスをタップして予約してください！';
+                    }
+                }
+            }
+
+            const boardEl = document.getElementById('shogi-board');
+            boardEl.style.gridTemplateColumns = `repeat(${boardSize}, minmax(0, 1fr))`;
+            boardEl.style.gridTemplateRows = `repeat(${boardSize}, minmax(0, 1fr))`;
+            boardEl.innerHTML = '';
+
+            const canAct = (room.status === 'PLAYING' && me && me.alive && me.frozen === 0);
+            const activeActions = canAct
+                ? (appState.actionMode === 'SKILL'
+                    ? computeSkillActions(me, players, boardSize)
+                    : computeMoveActions(me, players, boardSize))
+                : [];
+
+            const actionByCoord = new Map();
+            const splashByCoord = new Map();
+
+            activeActions.forEach(act => {
+                actionByCoord.set(`${act.toX},${act.toY}`, act);
+                if (act.pathCells) {
+                    act.pathCells.forEach(c => {
+                        if (getPieceAt(players, c.x, c.y)) {
+                            splashByCoord.set(`${c.x},${c.y}`, act);
+                        }
+                    });
+                }
+                if (act.kind === 'SKILL' && act.splashCells) {
+                    act.splashCells.forEach(c => {
+                        if (!actionByCoord.has(`${c.x},${c.y}`)) {
+                            splashByCoord.set(`${c.x},${c.y}`, act);
+                        }
+                    });
+                }
+            });
+
+            const fontCls = boardSize <= 4 ? 'text-3xl sm:text-4xl'
+                : boardSize <= 5 ? 'text-2xl sm:text-3xl'
+                : boardSize <= 6 ? 'text-xl sm:text-2xl'
+                : 'text-xs sm:text-base';
+
+            const hpDotCls = boardSize >= 10
+                ? 'text-[6px] sm:text-[8px] font-bold tracking-tighter leading-none mt-0.5'
+                : 'text-[8px] sm:text-[10px] font-bold tracking-tighter leading-none mt-0.5';
+
+            const damagedIds = room.lastDamagedIds || [];
+
+            for (let y = 0; y < boardSize; y++) {
+                for (let x = 0; x < boardSize; x++) {
+                    const cell = document.createElement('div');
+                    cell.className = 'board-cell';
+                    const key = `${x},${y}`;
+                    const act = actionByCoord.get(key);
+                    const splashAct = splashByCoord.get(key);
+
+                    if (appState.myPlottedAction && appState.myPlottedAction.toX === x && appState.myPlottedAction.toY === y && appState.myPlottedAction.kind !== 'WAIT') {
+                        cell.classList.add('cell-plotted');
+                    }
+
+                    if (act) {
+                        if (act.kind === 'MOVE') cell.classList.add('cell-move');
+                        else if (act.kind === 'SKILL') cell.classList.add('cell-skill');
+                        else cell.classList.add('cell-attack');
+                        cell.addEventListener('click', () => plotAction(act));
+                    } else if (splashAct) {
+                        cell.classList.add('cell-splash');
+                        cell.classList.add('cursor-pointer');
+                        cell.addEventListener('click', () => plotAction(splashAct));
+                    }
+
+                    const piece = getPieceAt(players, x, y);
+                    if (piece) {
+                        // カウンター構え中なら回転シールドリングを追加
+                        if ((piece.counterActive || 0) > 0) {
+                            const ring = document.createElement('div');
+                            ring.className = 'counter-shield-ring';
+                            cell.appendChild(ring);
+                        }
+
+                        const pEl = document.createElement('div');
+                        const ownerCls = piece.id === currentUserId ? 'piece-self'
+                            : (piece.isHuman ? 'piece-human' : 'piece-ai');
+                        pEl.className = `shogi-piece ${ownerCls}`;
+                        if (piece.frozen > 0) pEl.classList.add('piece-frozen');
+                        if (piece.copiedFrom) pEl.classList.add('piece-copied');
+                        if (damagedIds.includes(piece.id)) pEl.classList.add('animate-damage');
+                        if (appState.selectedPieceId === piece.id) pEl.classList.add('piece-selected');
+
+                        const hpDots = '●'.repeat(piece.hp) + '○'.repeat(Math.max(0, piece.maxHp - piece.hp));
+                        pEl.innerHTML = `
+                            <span class="font-shogi font-black text-slate-950 leading-none ${fontCls}">${piece.kanji}</span>
+                            <span class="${hpDotCls} ${piece.hp === 1 ? 'text-rose-800' : 'text-slate-900'}">${hpDots}</span>
+                        `;
+
+                        pEl.addEventListener('click', (e) => {
+                            appState.selectedPieceId = piece.id;
+                            inspectPiece(piece);
+                            // スキル対象マスに敵駒（コピー対象など）や自分（カウンター・回復）がいる場合はスキル予約を実行
+                            if (appState.actionMode === 'SKILL' && act) {
+                                plotAction(act);
+                                e.stopPropagation();
+                                return;
+                            }
+                            if (!act && !splashAct) {
+                                e.stopPropagation();
+                                renderBattle();
+                            }
+                        });
+
+                        cell.appendChild(pEl);
+                    }
+
+                    boardEl.appendChild(cell);
+                }
+            }
+
+            const logEl = document.getElementById('battle-log');
+            logEl.innerHTML = '';
+            (room.logs || []).forEach(entry => {
+                const row = document.createElement('div');
+                row.className = `border-b border-slate-800/60 pb-1 leading-relaxed ${entry.color || 'text-slate-300'}`;
+                row.textContent = entry.text;
+                logEl.appendChild(row);
+            });
+
+            const survEl = document.getElementById('battle-survivor-list');
+            survEl.innerHTML = '';
+            const sorted = [...players].sort((a, b) => (b.alive - a.alive) || (b.kills - a.kills));
+            sorted.forEach(p => {
+                const hasPlot = p.alive && ((p.id === currentUserId && appState.myPlottedAction) || (appState.membersMap[p.id]?.plotTurn === room.turn && appState.membersMap[p.id]?.plotAction));
+                const badges = `${p.copiedFrom ? '🪞' : ''}${(p.counterActive || 0) > 0 ? '🛡️' : ''}`;
+                const item = document.createElement('div');
+                item.className = `px-2 py-1 rounded-lg border text-[11px] flex items-center justify-between cursor-pointer ${
+                    p.alive
+                        ? (p.id === currentUserId ? 'bg-amber-500/15 border-amber-500/50 text-amber-200' : 'bg-slate-950/75 border-slate-800 text-slate-200')
+                        : 'bg-slate-950/30 border-slate-900 text-slate-600 line-through'
+                }`;
+                item.innerHTML = `
+                    <div class="flex items-center gap-1 truncate">
+                        <span class="font-shogi font-bold text-xs ${p.alive ? 'text-amber-300' : 'text-slate-600'}">${p.kanji}</span>
+                        <span class="truncate">${p.name}</span>
+                        ${badges ? `<span class="text-[10px]">${badges}</span>` : ''}
+                        ${hasPlot ? '<span class="text-emerald-400 text-[9px]">✔</span>' : ''}
+                    </div>
+                    <span class="text-[10px] font-bold shrink-0 ${p.alive ? 'text-rose-400' : 'text-slate-600'}">${p.alive ? `♥${p.hp}` : '脱落'}</span>
+                `;
+                item.addEventListener('click', () => {
+                    appState.selectedPieceId = p.id;
+                    inspectPiece(p);
+                    renderBattle();
+                });
+                survEl.appendChild(item);
+            });
+        }
+
+        function plotAction(action) {
+            const room = appState.roomData;
+            if (!room || room.status !== 'PLAYING') return;
+            const me = room.players.find(p => p.id === currentUserId);
+            if (!me || !me.alive || me.frozen > 0) return;
+
+            appState.myPlottedAction = action;
+            renderBattle();
+            updateMyMemberState({ plotTurn: room.turn, plotAction: action });
+        }
+
+        function inspectPiece(p) {
+            const box = document.getElementById('battle-inspect-box');
+            const tag = p.id === currentUserId
+                ? '<span class="px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300 font-bold">あなた</span>'
+                : `<span class="px-1.5 py-0.5 rounded bg-slate-800 text-slate-300">${p.name}</span>`;
+            const extra = [];
+            if (p.copiedFrom) extra.push(`<span class="text-fuchsia-300">🪞「${p.copiedFrom}」コピー中</span>`);
+            if ((p.counterActive || 0) > 0) extra.push(`<span class="text-rose-300">🛡️カウンター構え中</span>`);
+
+            box.innerHTML = `
+                <div class="flex items-center justify-between mb-1">
+                    <div class="flex items-center gap-1.5">
+                        <span class="font-shogi font-black text-base text-amber-300">${p.kanji}</span>
+                        ${tag}
+                    </div>
+                    <span class="text-rose-400 font-bold">HP ${p.hp}/${p.maxHp} ・ 撃破 ${p.kills}</span>
+                </div>
+                ${extra.length > 0 ? `<div class="text-[11px] font-bold mb-0.5 flex gap-2">${extra.join(' ')}</div>` : ''}
+                <div class="text-sky-300 font-semibold">${p.spec.moveTag}</div>
+                <div class="text-purple-300 text-[11px] mt-0.5">⚡ ${p.spec.skill.name}：${p.spec.skill.tag}</div>
+            `;
+        }
+
+        function showResultModal(room) {
+            const modal = document.getElementById('result-modal');
+            if (!modal.classList.contains('hidden')) return;
+
+            const w = room.winner;
+            const crown = document.getElementById('result-crown');
+            const title = document.getElementById('result-title');
+            const sub = document.getElementById('result-subtitle');
+            const vis = document.getElementById('winner-piece-visual');
+            const wName = document.getElementById('winner-name');
+            const wStats = document.getElementById('winner-stats');
+
+            if (!w) {
+                crown.textContent = '⚔️';
+                title.textContent = '全員相打ち・引き分け！';
+                sub.textContent = '最後の1駒が残らず決着しました';
+                vis.textContent = '無';
+                wName.textContent = '勝者なし';
+                wStats.textContent = `決着ターン: ${room.turn}`;
+            } else if (w.id === currentUserId) {
+                crown.textContent = '👑';
+                title.textContent = '優勝・天下統一！';
+                sub.textContent = 'おめでとうございます！最後まで生き残りました！';
+                vis.textContent = w.kanji;
+                wName.textContent = `${w.name}（${w.kanji} / ${w.spec.name}）`;
+                wStats.textContent = `撃破数: ${w.kills}体 / 決着ターン: ${room.turn}`;
+            } else {
+                crown.textContent = '🏆';
+                title.textContent = '対局決着！';
+                sub.textContent = `${w.name} が最後の1駒として生き残りました`;
+                vis.textContent = w.kanji;
+                wName.textContent = `${w.name}（${w.kanji} / ${w.spec.name}）`;
+                wStats.textContent = `撃破数: ${w.kills}体 / 決着ターン: ${room.turn}`;
+            }
+
+            const rematchBtn = document.getElementById('btn-rematch-room');
+            if (appState.isHost) {
+                rematchBtn.textContent = '同じ設定で再戦';
+                rematchBtn.classList.remove('hidden');
+            } else {
+                rematchBtn.classList.add('hidden');
+            }
+
+            modal.classList.remove('hidden');
+        }
+
+        // ============================================================================
+        // 10. タイマー・スタンプ演出・初期化
+        // ============================================================================
+        function startTimerLoop() {
+            if (appState.timerInterval) clearInterval(appState.timerInterval);
+            appState.timerInterval = setInterval(() => {
+                const room = appState.roomData;
+                if (!room || room.status !== 'PLAYING') return;
+
+                const me = room.players.find(p => p.id === currentUserId);
+                const speed = (!me || !me.alive) ? appState.spectatorSpeed : 1;
+                const remainMs = Math.max(0, room.turnDeadline - Date.now());
+                const remainSec = Math.ceil(remainMs / 1000);
+                const pct = Math.min(100, (remainMs / (TURN_SECONDS * 1000)) * 100);
+
+                document.getElementById('turn-timer-text').innerHTML = `${remainSec}<span class="text-xs font-normal ml-0.5">秒</span>`;
+                document.getElementById('turn-timer-bar').style.width = `${pct}%`;
+
+                if (appState.isHost && (remainMs <= 0 || (speed > 1 && remainMs <= (TURN_SECONDS * 1000) / speed))) {
+                    resolveCurrentTurn();
+                }
+            }, 250);
+        }
+
+        function spawnStamp(sender, msg) {
+            const overlay = document.getElementById('stamp-overlay');
+            if (!overlay) return;
+            const el = document.createElement('div');
+            el.style.left = `${12 + Math.random() * 62}%`;
+            el.style.top = `${15 + Math.random() * 65}%`;
+            el.className = 'absolute px-3 py-1.5 rounded-full bg-slate-900/95 border border-amber-400/70 text-xs font-bold text-amber-200 shadow-xl transition-all duration-1000 opacity-100 translate-y-0';
+            el.innerHTML = `<span class="text-[10px] text-slate-400 mr-1">${sender}:</span>${msg}`;
+            overlay.appendChild(el);
+            requestAnimationFrame(() => el.classList.add('-translate-y-8', 'opacity-0'));
+            setTimeout(() => el.remove(), 2200);
+        }
+
+        function updatePreview() {
+            const inp = document.getElementById('kanji-input');
+            let val = inp.value.trim();
+            if (val.length > 1) {
+                val = Array.from(val).pop();
+                inp.value = val;
+            }
+            const sp = getKanjiSpec(val || '火');
+            document.getElementById('preview-badge').textContent = sp.isSpecial ? '★ 固有能力漢字' : '✦ 汎用戦闘型';
+            document.getElementById('preview-title').textContent = `${sp.kanji}（${sp.name}）`;
+            document.getElementById('preview-hp').textContent = '♥ '.repeat(sp.hp).trim() + ` (${sp.hp})`;
+            document.getElementById('preview-desc').textContent = sp.desc;
+            document.getElementById('preview-move-tag').textContent = sp.moveTag;
+            document.getElementById('preview-skill-tag').textContent = `⚡ ${sp.skill.name}（${sp.skill.tag} / CT ${sp.skill.cd}T）`;
+        }
+
+        function initEncyclopediaAndPresets() {
+            const presetBox = document.getElementById('preset-kanji-list');
+            const encGrid = document.getElementById('encyclopedia-grid');
+            const keys = Object.keys(SPECIAL_KANJI_DB);
+
+            keys.forEach(k => {
+                const sp = SPECIAL_KANJI_DB[k];
+                const btn = document.createElement('button');
+                btn.type = 'button';
+                btn.className = 'px-2 py-1 rounded bg-slate-800 hover:bg-amber-500/20 border border-slate-700 text-xs font-shogi font-bold text-amber-200 transition';
+                btn.textContent = `${k}(HP${sp.hp})`;
+                btn.addEventListener('click', () => {
+                    document.getElementById('kanji-input').value = k;
+                    updatePreview();
+                });
+                presetBox.appendChild(btn);
+
+                const card = document.createElement('div');
+                card.className = 'bg-slate-950/80 border border-slate-800 rounded-xl p-3 flex gap-3 items-start';
+                card.innerHTML = `
+                    <div class="w-10 h-12 shrink-0 bg-gradient-to-b from-amber-300 to-amber-500 text-slate-950 font-shogi font-black text-xl flex items-center justify-center" style="clip-path: polygon(50% 4%, 92% 20%, 100% 98%, 0% 98%, 8% 20%);">
+                        ${k}
+                    </div>
+                    <div>
+                        <div class="flex items-center gap-2">
+                            <span class="font-bold text-amber-300 text-sm">${k}（${sp.name}）</span>
+                            <span class="text-rose-400 font-bold text-[11px]">HP: ${sp.hp}</span>
+                        </div>
+                        <div class="text-[11px] text-sky-300 mt-0.5">🏃 ${sp.moveTag}</div>
+                        <div class="text-[11px] text-purple-300 mt-0.5">⚡ ${sp.skill.name}（CT ${sp.skill.cd}T）：${sp.skill.tag}</div>
+                        <p class="text-[11px] text-slate-400 mt-1 leading-relaxed">${sp.desc}</p>
+                    </div>
+                `;
+                encGrid.appendChild(card);
+            });
+        }
+
+        // イベント登録
+        document.getElementById('kanji-input').addEventListener('input', updatePreview);
+        document.getElementById('btn-random-name').addEventListener('click', () => {
+            document.getElementById('player-name-input').value = RANDOM_NAMES[Math.floor(Math.random() * RANDOM_NAMES.length)];
+        });
+        document.getElementById('btn-random-kanji').addEventListener('click', () => {
+            document.getElementById('kanji-input').value = RANDOM_KANJI_LIST[Math.floor(Math.random() * RANDOM_KANJI_LIST.length)];
+            updatePreview();
+        });
+
+        document.getElementById('btn-quick-solo').addEventListener('click', startQuickSoloBattle);
+        document.getElementById('btn-create-room').addEventListener('click', createRoom);
+        document.getElementById('btn-join-room').addEventListener('click', joinRoom);
+        document.getElementById('btn-leave-room').addEventListener('click', leaveRoom);
+
+        document.getElementById('btn-copy-room-id').addEventListener('click', () => {
+            const txt = document.getElementById('display-room-id').textContent.trim();
+            const ta = document.createElement('textarea');
+            ta.value = txt;
+            document.body.appendChild(ta);
+            ta.select();
+            document.execCommand('copy');
+            document.body.removeChild(ta);
+            const btn = document.getElementById('btn-copy-room-id');
+            btn.textContent = '✅ コピー済';
+            setTimeout(() => { btn.textContent = '📋 コピー'; }, 1500);
+        });
+
+        document.getElementById('btn-update-my-kanji').addEventListener('click', () => {
+            const inp = document.getElementById('waiting-kanji-input');
+            let v = inp.value.trim();
+            if (v.length > 1) {
+                v = Array.from(v).pop();
+                inp.value = v;
+            }
+            updateMyMemberState({ kanji: v || '火' });
+        });
+
+        document.getElementById('btn-toggle-ready').addEventListener('click', () => {
+            const me = appState.membersMap[currentUserId];
+            if (!me) return;
+            updateMyMemberState({ ready: !me.ready });
+        });
+
+        document.getElementById('btn-add-ai-1').addEventListener('click', () => addAiBots(1));
+        document.getElementById('btn-add-ai-5').addEventListener('click', () => addAiBots(5));
+        document.getElementById('btn-clear-ai').addEventListener('click', clearAiBots);
+        document.getElementById('btn-host-start-game').addEventListener('click', hostStartFromWaiting);
+
+        document.getElementById('btn-mode-move').addEventListener('click', () => {
+            appState.actionMode = 'MOVE';
+            renderBattle();
+        });
+
+        document.getElementById('btn-mode-skill').addEventListener('click', () => {
+            const room = appState.roomData;
+            const me = room?.players?.find(p => p.id === currentUserId);
+            if (!me || !me.alive || me.frozen > 0 || (me.skillCooldown || 0) > 0) return;
+            appState.actionMode = 'SKILL';
+            renderBattle();
+        });
+
+        document.getElementById('btn-plot-wait').addEventListener('click', () => {
+            plotAction({ kind: 'WAIT' });
+        });
+
+        document.getElementById('btn-execute-turn-now').addEventListener('click', () => {
+            const room = appState.roomData;
+            if (!room) return;
+            if (room.status === 'FINISHED') {
+                showResultModal(room);
+                return;
+            }
+            resolveCurrentTurn();
+        });
+
+        document.querySelectorAll('.spectator-speed-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const spd = parseInt(btn.dataset.speed, 10) || 1;
+                appState.spectatorSpeed = spd;
+                document.querySelectorAll('.spectator-speed-btn').forEach(b => {
+                    b.className = parseInt(b.dataset.speed, 10) === spd
+                        ? 'spectator-speed-btn px-2 py-0.5 rounded text-[11px] bg-indigo-600 text-white font-bold'
+                        : 'spectator-speed-btn px-2 py-0.5 rounded text-[11px] bg-slate-800 text-slate-300 font-bold';
+                });
+            });
+        });
+
+        document.querySelectorAll('.stamp-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const st = btn.dataset.stamp;
+                const name = appState.membersMap[currentUserId]?.name || 'プレイヤー';
+                spawnStamp(name, st);
+                updateMyMemberState({ chatMsg: st, chatTs: Date.now() });
+            });
+        });
+
+        document.getElementById('chat-form').addEventListener('submit', (e) => {
+            e.preventDefault();
+            const inp = document.getElementById('chat-input');
+            const msg = inp.value.trim();
+            if (!msg) return;
+            inp.value = '';
+            const name = appState.membersMap[currentUserId]?.name || 'プレイヤー';
+            spawnStamp(name, msg);
+            updateMyMemberState({ chatMsg: msg, chatTs: Date.now() });
+        });
+
+        document.getElementById('btn-close-result').addEventListener('click', () => {
+            document.getElementById('result-modal').classList.add('hidden');
+        });
+
+        document.getElementById('btn-rematch-room').addEventListener('click', () => {
+            if (!appState.isHost || !appState.roomData) return;
+            document.getElementById('result-modal').classList.add('hidden');
+            const humans = Object.values(appState.membersMap);
+            const bots = appState.roomData.aiBots || [];
+            const total = humans.length + bots.length;
+            const bSize = getBoardSizeForPlayers(total);
+            const players = createInitialPlayers(humans, bots, bSize);
+            appState.myPlottedAction = null;
+            appState.actionMode = 'MOVE';
+            updateRoomState({
+                status: 'PLAYING',
+                turn: 1,
+                boardSize: bSize,
+                turnDeadline: Date.now() + TURN_SECONDS * 1000,
+                players,
+                logs: [{ text: `🔄 再戦開始！（${total}人 / ${bSize}×${bSize}盤）`, color: 'text-amber-300 font-bold' }],
+                winner: null,
+                lastDamagedIds: [],
+                fxBatchId: 0,
+                fxEvents: []
+            });
+        });
+
+        document.getElementById('btn-encyclopedia').addEventListener('click', () => {
+            document.getElementById('encyclopedia-modal').classList.remove('hidden');
+        });
+        document.getElementById('btn-close-encyclopedia').addEventListener('click', () => {
+            document.getElementById('encyclopedia-modal').classList.add('hidden');
+        });
+
+        // 起動
+        document.getElementById('player-name-input').value = RANDOM_NAMES[Math.floor(Math.random() * RANDOM_NAMES.length)];
+        initEncyclopediaAndPresets();
+        updatePreview();
+        initFxCanvas();
+        startTimerLoop();
+        initBackend();
+    </script>
+</body>
+</html>
